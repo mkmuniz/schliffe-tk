@@ -63,7 +63,7 @@ A consolidation of everything marked "left for later" across M0-M8 (previously s
 ## `bornes/prompt` (pasted logs, context notices)
 
 - **Claude Code can't let a hook edit a prompt**, so the compact version goes through the clipboard (`pbcopy`, `wl-copy`, `xclip`, `xsel`, `clip.exe`, in that order; otherwise saved to `~/.schliffe/prompts/last-compact.txt`). It overwrites whatever was on the clipboard; the original prompt is saved to `~/.schliffe/prompts/last-original.txt`.
-- **Log detection is rule-based.** Unusual stack formats fall back to the generic pass (ANSI codes, repeated lines, overlong lines); blocks under 20 lines / 1.5 KB, or that wouldn't shrink to 60% or less, are never touched.
+- **Log detection is rule-based.** What each kind keeps and drops is listed in `docs/pasted-logs.md`. Anything not recognized with confidence is left untouched (apart from ANSI codes and consecutive duplicate lines); blocks under 20 lines / 1.5 KB, or that wouldn't shrink to 60% or less, are never touched.
 - **Library vs. app frames are guessed by prefix** (`node_modules`, `java.`, `org.springframework.`, `System.`, `Microsoft.`…). A project whose own namespace starts like a framework would see its frames counted as library frames — still recoverable via `schliffe show`.
 - **Context size comes from the session transcript** (the latest reply's usage); the notice appears on the prompt after the threshold was crossed.
 - **Not native Windows** (same as the other hook).

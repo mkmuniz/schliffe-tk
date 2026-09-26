@@ -117,7 +117,7 @@ Before a prompt reaches the model, Schliffe checks two things (no model involved
    ```
 2. **A conversation that has grown large.** Every reply re-reads the whole conversation, so past 200k tokens (and again at 400k, 600k, 800k) you get a one-line notice suggesting a new conversation or `/compact`.
 
-Messages follow the language you write in (Portuguese or English).
+Messages follow the language you write in (Portuguese or English). What each kind of log keeps and drops: [`docs/pasted-logs.md`](docs/pasted-logs.md).
 
 ## Safety rules
 

@@ -262,8 +262,10 @@ fn build_offer(prompt: &str, cwd: Option<&str>, store: impl Fn(&str) -> String) 
             continue;
         }
         let hash = store(block);
+        // Tells the model exactly what changed, so it never reads a gap as
+        // "nothing happened there".
         let header = format!(
-            "({} compacted by {id}: {} → {} lines; full original: `schliffe show {hash}`)\n",
+            "({id} · pasted {}, {} → {} lines. Only library/framework frames and routine log lines were omitted, each shown as \"[+N lines omitted: ...]\" where it was; every error, warning and frame of the user's own code is unchanged. Full original: `schliffe show {hash}`)\n",
             kind.label(),
             n_lines,
             compacted.lines().count()
