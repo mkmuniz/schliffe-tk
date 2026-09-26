@@ -65,6 +65,9 @@ pub fn run(args: &[String]) -> ExitCode {
             ExitCode::SUCCESS
         }
         [cmd, sub] if cmd == "hook" && sub == "post-tool-use" => bornes::hook::run_post_tool_use(),
+        [cmd, sub] if cmd == "hook" && sub == "user-prompt-submit" => {
+            bornes::prompt::run_user_prompt_submit()
+        }
         [cmd, sub] if cmd == "hook" && sub == "install" => bornes::hook::install(),
         [cmd, sub] if cmd == "hook" && sub == "uninstall" => bornes::hook::uninstall(),
         [cmd] if cmd == "stats" => {

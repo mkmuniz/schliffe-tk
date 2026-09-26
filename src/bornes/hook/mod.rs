@@ -134,6 +134,14 @@ fn transform(input: &Value, max_edge: u32, store: impl Fn(&str) -> String) -> Op
 
 const HOOK_ARGS: &str = "hook post-tool-use";
 const MATCHER: &str = "Read|mcp__.*";
+const PROMPT_HOOK_ARGS: &str = "hook user-prompt-submit";
+
+/// Every Claude Code event Schliffe registers: (event, matcher, args, timeout s).
+const ENTRIES: &[(&str, Option<&str>, &str, u64)] = &[
+    ("PostToolUse", Some(MATCHER), HOOK_ARGS, 30),
+    // bornes/prompt: pasted logs + long-conversation warnings.
+    ("UserPromptSubmit", None, PROMPT_HOOK_ARGS, 10),
+];
 
 fn settings_path() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("SCHLIFFE_CLAUDE_SETTINGS") {
@@ -164,7 +172,10 @@ fn is_ours(hook: &Value) -> bool {
         .and_then(Value::as_str)
         // "elagix": the project's former name — so reinstalling replaces
         // a hook registered before the rename instead of adding a second one.
-        .is_some_and(|c| (c.contains("schliffe") || c.contains("elagix")) && c.contains(HOOK_ARGS))
+        .is_some_and(|c| {
+            (c.contains("schliffe") || c.contains("elagix"))
+                && (c.contains(HOOK_ARGS) || c.contains(PROMPT_HOOK_ARGS))
+        })
 }
 
 /// Adds (or refreshes) Schliffe's PostToolUse entry in Claude Code's user
@@ -189,14 +200,6 @@ pub fn install() -> ExitCode {
         }
     };
     remove_ours(&mut settings);
-    let entry = json!({
-        "matcher": MATCHER,
-        "hooks": [{
-            "type": "command",
-            "command": format!("{} {HOOK_ARGS}", schliffe_bin()),
-            "timeout": 30,
-        }],
-    });
     let Some(root) = settings.as_object_mut() else {
         eprintln!("schliffe: {} isn't a JSON object", path.display());
         return ExitCode::FAILURE;
@@ -206,15 +209,27 @@ pub fn install() -> ExitCode {
         eprintln!("schliffe: \"hooks\" in {} isn't an object", path.display());
         return ExitCode::FAILURE;
     };
-    let post = hooks.entry("PostToolUse").or_insert_with(|| json!([]));
-    let Some(post) = post.as_array_mut() else {
-        eprintln!(
-            "schliffe: \"hooks.PostToolUse\" in {} isn't a list",
-            path.display()
-        );
-        return ExitCode::FAILURE;
-    };
-    post.push(entry);
+    for (event, matcher, args, timeout) in ENTRIES {
+        let mut entry = json!({
+            "hooks": [{
+                "type": "command",
+                "command": format!("{} {args}", schliffe_bin()),
+                "timeout": timeout,
+            }],
+        });
+        if let Some(m) = matcher {
+            entry["matcher"] = json!(m);
+        }
+        let list = hooks.entry(*event).or_insert_with(|| json!([]));
+        let Some(list) = list.as_array_mut() else {
+            eprintln!(
+                "schliffe: \"hooks.{event}\" in {} isn't a list",
+                path.display()
+            );
+            return ExitCode::FAILURE;
+        };
+        list.push(entry);
+    }
     match write_settings(&path, &settings) {
         Ok(backup) => {
             println!("schliffe: hook installed in {}", path.display());
@@ -223,8 +238,8 @@ pub fn install() -> ExitCode {
             }
             println!(
                 "schliffe: open a NEW Claude Code session (or reload the VS Code window) to\n\
-                 activate it. Remote MCP results (e.g. Figma) and large images read by\n\
-                 Claude will be reduced; check with `schliffe stats`."
+                 activate it. Remote MCP results (e.g. Figma), large images, pasted logs\n\
+                 and long-conversation warnings are handled; check with `schliffe stats`."
             );
             ExitCode::SUCCESS
         }
@@ -299,30 +314,33 @@ fn write_settings(path: &PathBuf, settings: &Value) -> std::io::Result<Option<Pa
     Ok(backup)
 }
 
-/// Drops Schliffe's hook from every PostToolUse group (and groups left
+/// Drops Schliffe's hooks from every event it registers (and groups left
 /// empty). Returns whether anything was removed.
 fn remove_ours(settings: &mut Value) -> bool {
-    let Some(post) = settings
-        .pointer_mut("/hooks/PostToolUse")
-        .and_then(Value::as_array_mut)
-    else {
-        return false;
-    };
-    let before = post.len();
     let mut removed = false;
-    for group in post.iter_mut() {
-        if let Some(hooks) = group.get_mut("hooks").and_then(Value::as_array_mut) {
-            let n = hooks.len();
-            hooks.retain(|h| !is_ours(h));
-            removed |= hooks.len() != n;
+    for (event, ..) in ENTRIES {
+        let Some(list) = settings
+            .pointer_mut(&format!("/hooks/{event}"))
+            .and_then(Value::as_array_mut)
+        else {
+            continue;
+        };
+        let before = list.len();
+        for group in list.iter_mut() {
+            if let Some(hooks) = group.get_mut("hooks").and_then(Value::as_array_mut) {
+                let n = hooks.len();
+                hooks.retain(|h| !is_ours(h));
+                removed |= hooks.len() != n;
+            }
         }
+        list.retain(|g| {
+            g.get("hooks")
+                .and_then(Value::as_array)
+                .is_none_or(|h| !h.is_empty())
+        });
+        removed |= list.len() != before;
     }
-    post.retain(|g| {
-        g.get("hooks")
-            .and_then(Value::as_array)
-            .is_none_or(|h| !h.is_empty())
-    });
-    removed || post.len() != before
+    removed
 }
 
 #[cfg(test)]

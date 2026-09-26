@@ -413,11 +413,18 @@ fn hook_install_and_uninstall_keep_other_settings() {
     assert_eq!(after.matches("hook post-tool-use").count(), 1, "{after}");
     assert!(after.contains("\"model\": \"opus\"") && after.contains("my-linter"));
     assert!(after.contains("Read|mcp__.*"));
+    assert_eq!(
+        after.matches("hook user-prompt-submit").count(),
+        1,
+        "{after}"
+    );
+    assert!(after.contains("UserPromptSubmit"));
 
     let out = run_with_stdin(&sb, &["hook", "uninstall"], "", &env);
     assert!(out.status.success());
     let after = fs::read_to_string(&settings).unwrap();
     assert!(!after.contains("post-tool-use") && after.contains("my-linter"));
+    assert!(!after.contains("user-prompt-submit"));
 }
 
 fn json_str(s: &str) -> String {

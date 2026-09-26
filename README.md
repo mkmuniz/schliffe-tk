@@ -99,9 +99,25 @@ In real sessions most tokens are the conversation itself, re-read on every turn 
 | Remote MCP servers | Figma and other HTTP/OAuth servers | Claude Code hook |
 | Images | Screenshots from MCP tools, PNG/JPEG opened with Read (resized to 1280px) | Claude Code hook |
 | Local MCP servers | Any stdio server you wrap | JSON-RPC proxy |
+| Pasted logs | Stack traces (Node/TS, Python, Java, .NET, Go, Rust) and app logs pasted into a prompt | Claude Code hook |
+| Long conversations | A one-time notice at 200k / 400k / 600k / 800k tokens of context | Claude Code hook |
 | Commit messages | Body of `git log` / `git show` summarized to one sentence | TF-IDF, no model |
 
 Commands without a rule (`ls`, `curl`, `make`...) run untouched, streaming live.
+
+## Pasted logs and long conversations
+
+Before a prompt reaches the model, Schliffe checks two things (no model involved, nothing added to the conversation):
+
+1. **A big log pasted into the prompt.** It recognizes the kind — stack traces from Node/TypeScript, Python, Java/Kotlin, .NET, Go and Rust, or timestamped app logs — and builds a compact version: every error message and your own code's frames stay; framework frames and routine lines become counted markers; the full log stays recoverable with `schliffe show <hash>`.
+   Claude Code doesn't let a hook edit a prompt, so the prompt is held back and **the compact version of your whole prompt is copied to the clipboard** — paste and send. Sending the same prompt again sends the original.
+   ```text
+   ✂️ Schliffe: .NET stack trace detected (45 → 5 lines, −91%). A compact version of your prompt
+   was copied — paste it and send. To send the original, send the same message again.
+   ```
+2. **A conversation that has grown large.** Every reply re-reads the whole conversation, so past 200k tokens (and again at 400k, 600k, 800k) you get a one-line notice suggesting a new conversation or `/compact`.
+
+Messages follow the language you write in (Portuguese or English).
 
 ## Safety rules
 
@@ -127,7 +143,9 @@ Details and the evidence behind each rule: [`specs.md`](specs.md) §4.
 | `SCHLIFFE_IMAGE_MAX_EDGE` | Image size cap in px (default `1280`, `0` = off) |
 | `SCHLIFFE_MCP_RAW_TOOLS=a,b` | MCP tools never to compress |
 | `SCHLIFFE_FILTERS_DIR` | Extra TOML rules (default `~/.schliffe/filters`) |
-| `SCHLIFFE_NO_HOOK=1` | `install.sh`: skip the Claude Code hook |
+| `SCHLIFFE_PROMPT_LOGS` | Pasted logs: `block` (default, copy compact version), `tip` (just a hint), `off` |
+| `SCHLIFFE_CONTEXT_WARN_AT` | Context notice thresholds in tokens (default `200000,400000,600000,800000`, `0` = off) |
+| `SCHLIFFE_NO_HOOK=1` | `install.sh`: skip the Claude Code hooks |
 
 Commands: `schliffe stats` · `schliffe show <hash>` · `schliffe hook install|uninstall` · `schliffe mcp` · `schliffe compress` · `schliffe store gc|clear` · `schliffe --version`.
 
@@ -186,6 +204,7 @@ src/
   bornes/
     comandos/      # $PATH shim — Layer A parsers + Layer B TOML rules
     hook/          # Claude Code PostToolUse hook — remote MCP + images
+    prompt/        # Claude Code UserPromptSubmit hook — pasted logs, context notices
     mcp/           # stdio JSON-RPC proxy for local MCP servers
     prosa/         # TF-IDF commit-message summaries
 tests/e2e.rs       # end-to-end tests against the compiled binary

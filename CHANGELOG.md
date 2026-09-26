@@ -8,6 +8,8 @@ All notable changes to this project are recorded here. Format loosely inspired b
 - **`cargo test` could report success on a failed run.** The filter only read the last `test result:` line; with several suites (unit + integration + doc-tests), a failure in an early suite followed by a passing last one read as `test result: ok` (only the exit code was right). It now reads every suite.
 
 ### Added
+- **Pasted logs** (Claude Code `UserPromptSubmit` hook): recognizes stack traces (Node/TS, Python, Java/Kotlin, .NET, Go, Rust) and timestamped app logs pasted into a prompt, and copies a compact version of the whole prompt to the clipboard — errors and your own frames kept, the original recoverable. Sending the same prompt again sends the original. `SCHLIFFE_PROMPT_LOGS=block|tip|off`.
+- **Long-conversation notice**: once per threshold (200k/400k/600k/800k tokens of context), a one-line suggestion to start a new conversation or `/compact`. `SCHLIFFE_CONTEXT_WARN_AT`.
 - `cargo test`: one totals line when everything passes (`cargo test: 89 passed; 0 failed (2 suites, 17.71s)`); on failure, each suite's result plus every failing test with where it panicked and the message.
 - `git pull`/`git merge`: a clean fast-forward or merge becomes one line (range + summary); conflicts and errors are kept verbatim.
 - `git branch -a`/`-r`: remote branches grouped per remote, prefix stripped, mirrors of local branches counted instead of listed, long lists capped (recoverable).
