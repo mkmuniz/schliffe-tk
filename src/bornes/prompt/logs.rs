@@ -46,6 +46,12 @@ const MAX_LINE: usize = 400;
 pub fn detect(text: &str) -> LogKind {
     let lines: Vec<&str> = text.lines().collect();
     let count = |pred: &dyn Fn(&str) -> bool| lines.iter().filter(|l| pred(l)).count();
+    // Checked first: an app log that is mostly timestamped lines often has
+    // a stack trace inside it, and treating the whole thing as a stack trace
+    // would leave all the routine lines in (found with a real server log).
+    if lines.len() >= 5 && count(&|l| timestamp().is_match(l)) * 2 >= lines.len() {
+        return LogKind::TimestampedLog;
+    }
     if text.contains("Traceback (most recent call last):") {
         return LogKind::PythonTraceback;
     }
@@ -66,9 +72,6 @@ pub fn detect(text: &str) -> LogKind {
     if count(&|l| js_frame().is_match(l)) >= 2 {
         return LogKind::JsStack;
     }
-    if lines.len() >= 5 && count(&|l| timestamp().is_match(l)) * 2 >= lines.len() {
-        return LogKind::TimestampedLog;
-    }
     LogKind::Generic
 }
 
@@ -83,7 +86,7 @@ pub fn compact(text: &str, kind: LogKind) -> String {
         LogKind::PythonTraceback => python(&cleaned),
         LogKind::GoPanic => go_panic(&cleaned),
         LogKind::RustPanic => rust_panic(&cleaned),
-        LogKind::TimestampedLog => timestamped(&cleaned),
+        LogKind::TimestampedLog => embedded_stacks(&timestamped(&cleaned)),
         LogKind::Generic => cleaned.clone(),
     };
     if out.len() < text.len() {
@@ -116,6 +119,13 @@ fn dotnet_frame() -> &'static Regex {
     // `at Ns.Class.Method(Int32 id) in /src/File.cs:line 57` — the name has
     // no spaces and touches the parenthesis (unlike JS's `at fn (file:1:2)`).
     re(&R, r"^\s+at [\w.`<>\[\]+,]+\([^)]*\)( in .+:line \d+)?\s*$")
+}
+fn rust_std_frame() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    re(
+        &R,
+        r"- <*(std|core|alloc|tokio|futures\w*|panic_unwind|backtrace\w*|__rust\w*|rust_begin_unwind|__rustc|_main|start)\b",
+    )
 }
 fn timestamp() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
@@ -181,8 +191,10 @@ fn generic_pass(text: &str) -> String {
 // ---- stack traces (JS, Java, .NET) --------------------------------------
 
 fn is_js_library(frame: &str) -> bool {
+    // node_modules, and Node's own core (`node:events`, `node:internal/...`).
     frame.contains("node_modules")
-        || frame.contains("node:internal")
+        || frame.contains("(node:")
+        || frame.contains(" node:")
         || frame.contains("(internal/")
 }
 fn is_java_library(frame: &str) -> bool {
@@ -367,24 +379,9 @@ fn rust_panic(text: &str) -> String {
         return text.to_string();
     };
     let mut out: Vec<String> = lines[..=bt].iter().map(|l| l.to_string()).collect();
-    let lib = |l: &str| {
-        let t = l.trim_start();
-        [
-            "std::",
-            "core::",
-            "alloc::",
-            "tokio::",
-            "futures",
-            "rust_begin_unwind",
-            "__rust",
-            "<core::",
-            "<alloc::",
-            "<std::",
-            "at /rustc/",
-        ]
-        .iter()
-        .any(|p| t.contains(p))
-    };
+    // The crate is the symbol's first path segment, written `std::` or —
+    // in recent Rust — `std[5d97c59e5e5fafcc]::` (found with a real panic).
+    let lib = |l: &str| rust_std_frame().is_match(l);
     let mut hidden = 0;
     let mut kept = 0;
     let mut i = bt + 1;
@@ -418,6 +415,21 @@ fn rust_panic(text: &str) -> String {
 }
 
 // ---- timestamped logs ---------------------------------------------------
+
+/// A stack trace inside an app log (printed under an ERROR line) gets the
+/// same frame treatment as a pasted one.
+fn embedded_stacks(text: &str) -> String {
+    let frames = |re: &Regex| text.lines().filter(|l| re.is_match(l)).count();
+    if frames(java_frame()) >= 2 {
+        stack(text, java_frame(), is_java_library)
+    } else if frames(dotnet_frame()) >= 2 {
+        stack(text, dotnet_frame(), is_dotnet_library)
+    } else if frames(js_frame()) >= 2 {
+        stack(text, js_frame(), is_js_library)
+    } else {
+        text.to_string()
+    }
+}
 
 /// Keeps every error/warning line with CONTEXT lines around it, plus the
 /// first and last line (so the time span stays visible); each run of
@@ -594,6 +606,43 @@ mod tests {
         let t = "\x1b[31mwarn: retrying\x1b[0m\nwarn: retrying\nwarn: retrying\ndone\n";
         assert_eq!(detect(t), LogKind::Generic);
         assert_eq!(compact(t, LogKind::Generic), "warn: retrying  (×3)\ndone");
+    }
+
+    /// Real logs captured on the dev machine (2026-09-26), paths anonymized.
+    #[test]
+    fn real_node_express_error() {
+        let t = include_str!("fixtures/node-full.log");
+        assert_eq!(detect(t), LogKind::JsStack);
+        let out = compact(t, LogKind::JsStack);
+        assert!(out.starts_with("TypeError: Cannot read properties of undefined (reading 'user')"));
+        assert!(out.contains("at loadUser (/home/dev/app/node/app.js:3:45)"));
+        assert!(!out.contains("node:events"), "{out}"); // Node core is library
+        assert!(out.lines().count() <= 6, "{out}");
+    }
+
+    #[test]
+    fn real_rust_panic_keeps_the_users_frame() {
+        let t = include_str!("fixtures/rust.log");
+        assert_eq!(detect(t), LogKind::RustPanic);
+        let out = compact(t, LogKind::RustPanic);
+        assert!(out.contains("panicked at src/main.rs:1:103"));
+        assert!(out.contains("user not found"));
+        assert!(out.contains("find_user"), "{out}");
+        assert!(!out.contains("backtrace_rs"), "{out}");
+        assert!(!out.contains("BacktraceLock"), "{out}"); // `<<std[..]` frames too
+    }
+
+    #[test]
+    fn real_server_log_with_a_stack_inside() {
+        let t = include_str!("fixtures/app.log");
+        assert_eq!(detect(t), LogKind::TimestampedLog);
+        let out = compact(t, LogKind::TimestampedLog);
+        assert!(out.contains("ERROR db query failed"));
+        assert!(out.contains("WARN pool nearly exhausted"));
+        assert!(out.contains("TypeError: Cannot read properties of null"));
+        assert!(out.contains("logs.js:4:12")); // the user's frame
+        assert!(!out.contains("cjs/loader:1266"), "{out}"); // Node internals collapsed
+        assert!(out.len() * 5 < t.len(), "{} vs {}", out.len(), t.len());
     }
 
     #[test]

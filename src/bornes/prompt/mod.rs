@@ -165,7 +165,7 @@ fn handle(prompt: &str, input: &Value, state: &mut State, env: &Env) -> Option<V
     }
 
     if env.log_mode != LogMode::Off
-        && let Some(offer) = build_offer(prompt, |s| {
+        && let Some(offer) = build_offer(prompt, input.get("cwd").and_then(Value::as_str), |s| {
             if env.effects {
                 store::put(s)
             } else {
@@ -227,7 +227,9 @@ struct Offer {
 /// Finds pasted blocks (Claude Code wraps them in `<pasted_content id=…>`
 /// lines; without markers, the whole prompt is considered only when it's
 /// clearly a log) and compacts the ones worth it.
-fn build_offer(prompt: &str, store: impl Fn(&str) -> String) -> Option<Offer> {
+/// `cwd`: the session's project folder — paths inside it become relative in
+/// the compacted log (stack traces repeat the absolute path on every frame).
+fn build_offer(prompt: &str, cwd: Option<&str>, store: impl Fn(&str) -> String) -> Option<Offer> {
     let blocks = pasted_blocks(prompt);
     let candidates: Vec<(usize, usize)> = if blocks.is_empty() {
         let kind = logs::detect(prompt);
@@ -254,7 +256,7 @@ fn build_offer(prompt: &str, store: impl Fn(&str) -> String) -> Option<Offer> {
             continue;
         }
         let kind = logs::detect(block);
-        let compacted = logs::compact(block, kind);
+        let compacted = relative_paths(&logs::compact(block, kind), cwd);
         if (compacted.len() as f64) > (block.len() as f64) * MAX_RATIO {
             out.push_str(block);
             continue;
@@ -310,6 +312,19 @@ fn pasted_blocks(prompt: &str) -> Vec<(usize, usize)> {
         search = prompt[close..]
             .find('\n')
             .map_or(prompt.len(), |n| close + n + 1);
+    }
+    out
+}
+
+fn relative_paths(text: &str, cwd: Option<&str>) -> String {
+    let mut out = text.to_string();
+    if let Some(cwd) = cwd.map(|c| c.trim_end_matches('/')).filter(|c| c.len() > 1) {
+        out = out.replace(&format!("{cwd}/"), "");
+    }
+    if let Ok(home) = std::env::var("HOME")
+        && home.len() > 1
+    {
+        out = out.replace(&format!("{home}/"), "~/");
     }
     out
 }
@@ -534,10 +549,14 @@ mod tests {
     #[test]
     fn offer_keeps_user_text_and_errors_and_drops_markers() {
         let prompt = pasted(&trace(60));
-        let offer = build_offer(&prompt, short_hash).unwrap();
+        let offer = build_offer(&prompt, Some("/app/src/"), short_hash).unwrap();
         assert!(offer.prompt.starts_with("o build quebrou"));
         assert!(offer.prompt.contains("TypeError: x is undefined"));
-        assert!(offer.prompt.contains("run.ts:3:9"));
+        assert!(
+            offer.prompt.contains("at run (run.ts:3:9)"),
+            "{}",
+            offer.prompt
+        ); // relative to cwd
         assert!(offer.prompt.contains("schliffe show "));
         assert!(!offer.prompt.contains("pasted_content"));
         assert!(offer.after * 3 < offer.before);
