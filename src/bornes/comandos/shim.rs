@@ -96,17 +96,85 @@ pub fn stdout_is_tty() -> bool {
 /// environment: Claude Code sets `CLAUDECODE=1`, and `AI_AGENT` is a generic
 /// marker other agents are adopting. `SCHLIFFE_FORCE=1` opts any other tool in,
 /// `SCHLIFFE_DISABLE=1` turns filtering off even inside an agent.
+///
+/// Second condition (2026-09-27): the command must have been launched by a
+/// shell. The agent marker is inherited by EVERY process under the agent,
+/// not just the commands the model runs: Claude Code's own internal `git`
+/// calls (for its UI), MCP servers, test runners and node scripts spawn
+/// `git`/`docker` directly — ~8k such calls a day showed up as "agent
+/// commands" in `stats`, and a program parsing `git log` would have
+/// received the compacted text. The model's commands always go through a
+/// shell (verified: parent `zsh`, grandparent the `claude` binary).
+/// `SCHLIFFE_FORCE=1` skips this check.
 pub fn agent_active() -> bool {
-    agent_active_from(|name| env::var_os(name).filter(|v| !v.is_empty()).is_some())
+    let is_set = |name: &str| env::var_os(name).filter(|v| !v.is_empty()).is_some();
+    agent_active_from(is_set, parent_is_shell)
 }
 
-fn agent_active_from(is_set: impl Fn(&str) -> bool) -> bool {
+fn agent_active_from(is_set: impl Fn(&str) -> bool, parent_is_shell: impl Fn() -> bool) -> bool {
     if is_set("SCHLIFFE_DISABLE") {
         return false;
     }
-    ["SCHLIFFE_FORCE", "CLAUDECODE", "AI_AGENT"]
-        .iter()
-        .any(|name| is_set(name))
+    if is_set("SCHLIFFE_FORCE") {
+        return true;
+    }
+    ["CLAUDECODE", "AI_AGENT"].iter().any(|name| is_set(name)) && parent_is_shell()
+}
+
+const SHELLS: &[&str] = &[
+    "sh", "bash", "zsh", "dash", "ash", "ksh", "mksh", "fish", "tcsh", "csh", "nu", "busybox",
+];
+
+/// Whether the parent process is a shell. When the parent can't be
+/// identified, assumes it is (the behavior before this check existed).
+fn parent_is_shell() -> bool {
+    match parent_name() {
+        Some(name) => {
+            let base = name
+                .rsplit('/')
+                .next()
+                .unwrap_or(&name)
+                .trim_start_matches('-');
+            SHELLS.contains(&base)
+        }
+        None => true,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn parent_name() -> Option<String> {
+    let ppid = std::os::unix::process::parent_id();
+    std::fs::read_link(format!("/proc/{ppid}/exe"))
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
+        .or_else(|| {
+            std::fs::read_to_string(format!("/proc/{ppid}/comm"))
+                .ok()
+                .map(|s| s.trim().to_string())
+        })
+}
+
+#[cfg(target_os = "macos")]
+fn parent_name() -> Option<String> {
+    unsafe extern "C" {
+        // libproc, part of libSystem (always linked on macOS).
+        fn proc_pidpath(pid: i32, buffer: *mut u8, buffersize: u32) -> i32;
+    }
+    let ppid = std::os::unix::process::parent_id() as i32;
+    let mut buf = vec![0u8; 4096];
+    // SAFETY: the buffer is valid and writable for its full length, and
+    // proc_pidpath writes at most `buffersize` bytes into it.
+    let len = unsafe { proc_pidpath(ppid, buf.as_mut_ptr(), buf.len() as u32) };
+    if len <= 0 {
+        return None;
+    }
+    buf.truncate(len as usize);
+    String::from_utf8(buf).ok()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn parent_name() -> Option<String> {
+    None
 }
 
 pub struct CapturedRun {
@@ -169,21 +237,27 @@ mod tests {
 
     #[test]
     fn plain_pipe_without_agent_is_not_filtered() {
-        assert!(!agent_active_from(with_vars(&[])));
+        assert!(!agent_active_from(with_vars(&[]), || true));
     }
 
     #[test]
     fn agent_markers_enable_filtering() {
-        assert!(agent_active_from(with_vars(&["CLAUDECODE"])));
-        assert!(agent_active_from(with_vars(&["AI_AGENT"])));
-        assert!(agent_active_from(with_vars(&["SCHLIFFE_FORCE"])));
+        assert!(agent_active_from(with_vars(&["CLAUDECODE"]), || true));
+        assert!(agent_active_from(with_vars(&["AI_AGENT"]), || true));
+        assert!(agent_active_from(with_vars(&["SCHLIFFE_FORCE"]), || false));
     }
 
     #[test]
     fn disable_wins_over_agent_markers() {
-        assert!(!agent_active_from(with_vars(&[
-            "CLAUDECODE",
-            "SCHLIFFE_DISABLE"
-        ])));
+        assert!(!agent_active_from(
+            with_vars(&["CLAUDECODE", "SCHLIFFE_DISABLE"]),
+            || true
+        ));
+    }
+
+    #[test]
+    fn agent_marker_without_a_shell_parent_is_not_the_model() {
+        // e.g. Claude Code's own `git` calls, an MCP server, a test runner.
+        assert!(!agent_active_from(with_vars(&["CLAUDECODE"]), || false));
     }
 }

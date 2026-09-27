@@ -6,4 +6,5 @@
 pub mod comandos;
 pub mod hook;
 pub mod mcp;
+pub mod prompt;
 pub mod prosa;
