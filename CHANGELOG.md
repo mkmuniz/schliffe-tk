@@ -5,6 +5,7 @@ All notable changes to this project are recorded here. Format loosely inspired b
 ## [Unreleased]
 
 ### Fixed
+- **Agent detection counted every process under the agent.** Claude Code's own internal `git` calls (and anything polling `docker context`) inherit `CLAUDECODE`, so ~8k non-model calls a day were logged in `stats`, and a program parsing `git log` could have received compacted text. Filtering now also requires the command's parent to be a shell — how the model's commands are always run.
 - **`cargo test` could report success on a failed run.** The filter only read the last `test result:` line; with several suites (unit + integration + doc-tests), a failure in an early suite followed by a passing last one read as `test result: ok` (only the exit code was right). It now reads every suite.
 
 ### Added

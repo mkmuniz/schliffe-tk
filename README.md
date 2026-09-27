@@ -18,7 +18,7 @@
 When Claude Code (or another agent) runs `git diff`, `pnpm build` or `cargo test`, it reads the whole output — progress bars, padding, 190 remote branches, one line per passing test. Schliffe sits in between and hands the agent a compact version:
 
 - **Same command, no prefix.** The agent runs `git log`; Schliffe answers. Nothing to configure per project.
-- **Only for AI agents.** You, your editor, git hooks and scripts get the untouched output.
+- **Only for the model's own commands.** You, your editor, and programs that call `git`/`docker` directly — including the agent's own internals, MCP servers and test runners — get the untouched output.
 - **Nothing is lost.** Every cut is marked, and `schliffe show <hash>` returns the original.
 
 ```text
@@ -138,7 +138,7 @@ Details and the evidence behind each rule: [`specs.md`](specs.md) §4.
 | Variable | Effect |
 |---|---|
 | `SCHLIFFE_DISABLE=1` | Turn filtering off (e.g. `SCHLIFFE_DISABLE=1 git diff > x.patch`) |
-| `SCHLIFFE_FORCE=1` | Filter for an agent that doesn't set `CLAUDECODE` / `AI_AGENT` |
+| `SCHLIFFE_FORCE=1` | Filter even without an agent marker or a shell parent |
 | `SCHLIFFE_NO_STATS=1` | Don't record `stats` |
 | `SCHLIFFE_IMAGE_MAX_EDGE` | Image size cap in px (default `1280`, `0` = off) |
 | `SCHLIFFE_MCP_RAW_TOOLS=a,b` | MCP tools never to compress |

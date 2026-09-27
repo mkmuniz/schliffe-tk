@@ -62,15 +62,42 @@ impl Sandbox {
 
     /// Runs `name args...` through the shims dir, as an AI agent (`agent`)
     /// or as a plain script. stdout is a pipe here (never a TTY).
+    /// Runs `name args...` the way an agent does: through a shell (the
+    /// shim only filters when its parent is a shell). The trailing
+    /// `exit $?` keeps the shell from exec-ing the command, so the shell
+    /// really is the parent.
     fn run(&self, name: &str, args: &[&str], agent: bool, extra: &[(&str, &str)]) -> Output {
+        self.run_via(true, name, args, agent, extra)
+    }
+
+    /// `via_shell = false`: spawned directly by another program (like
+    /// Claude Code's own internal git calls, an MCP server, a test runner).
+    fn run_via(
+        &self,
+        via_shell: bool,
+        name: &str,
+        args: &[&str],
+        agent: bool,
+        extra: &[(&str, &str)],
+    ) -> Output {
         let path = format!(
             "{}:{}:/usr/bin:/bin",
             self.shims().display(),
             self.root.join("real").display()
         );
-        let mut cmd = Command::new(self.shims().join(name));
-        cmd.args(args)
-            .env_clear()
+        let mut cmd = if via_shell {
+            let mut c = Command::new("/bin/sh");
+            c.arg("-c")
+                .arg("\"$0\" \"$@\"; exit $?")
+                .arg(self.shims().join(name))
+                .args(args);
+            c
+        } else {
+            let mut c = Command::new(self.shims().join(name));
+            c.args(args);
+            c
+        };
+        cmd.env_clear()
             .env("PATH", path)
             .env("HOME", &self.root)
             .env("SCHLIFFE_SHIMS_DIR", self.shims())
@@ -125,6 +152,16 @@ fn agent_gets_filtered_output() {
     assert!(text.starts_with("1111111111 2026-07-25 22:42 Ana — feat: first"));
     assert!(text.contains("2222222222 2026-07-24 10:00 Bia — fix: second"));
     assert!(text.len() < GIT_LOG.len());
+}
+
+#[test]
+fn agent_marker_without_a_shell_parent_is_not_filtered() {
+    // Claude Code's own internal git calls, MCP servers, test runners...
+    // inherit CLAUDECODE but aren't the model: raw output, nothing logged.
+    let sb = git_sandbox();
+    let out = sb.run_via(false, "git", &["log"], true, &[]);
+    assert_eq!(stdout(&out), GIT_LOG);
+    assert!(!sb.root.join(".schliffe").join("stats.log").exists());
 }
 
 #[test]
