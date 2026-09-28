@@ -2,7 +2,7 @@
 
 All notable changes to this project are recorded here. Format loosely inspired by [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.4.0] — 2026-09-27
 
 ### Fixed
 - **Agent detection counted every process under the agent.** Claude Code's own internal `git` calls (and anything polling `docker context`) inherit `CLAUDECODE`, so ~8k non-model calls a day were logged in `stats`, and a program parsing `git log` could have received compacted text. Filtering now also requires the command's parent to be a shell — how the model's commands are always run.
