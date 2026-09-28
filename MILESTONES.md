@@ -191,3 +191,60 @@ Only 5 files needed a real content change (everything else was moved untouched):
 - Real, non-blocking pending items: (1) validate `install.ps1` on a Windows machine with a genuine native toolchain; (2) real build/test on macOS (needs a physical Mac or CI); (3) the project's own repository now has commits, published under `mkmuniz/schliffe-tk`, after the M8 rename to Schliffe; (4) watch real usage for a few days and see if any filter needs adjusting based on real production data, not just fixtures; (5) `install.sh`'s zsh path hasn't been tested live (only bash, this machine's real shell).
 - Test the shim under real use (add `~/.schliffe/shims` to the persistent `$PATH`, not just per-call) and watch it for a few days before moving forward
 - `bornes/mcp` also needs a live test against a real MCP server (not just the test fake) before M5/M6 can be considered ready for real use — only the mechanism has been validated, not compatibility with production servers
+
+## Roadmap — M9 onwards (planned 2026-09-27)
+
+Order chosen by impact: ship what's already built, then attack the biggest cost (long conversations), then adoption, then the remaining sources of tokens.
+
+### M9 — Release v0.4.0
+
+- **Goal:** publish what's merged since v0.3.0 — the `cargo test` false-success fix, the prompt hook (pasted logs + long-conversation notice), shell-only agent detection, the RTK-gap filters.
+- **Requirements:**
+  - `Cargo.toml` → `0.4.0`; `CHANGELOG.md` `[Unreleased]` → `[0.4.0] — <date>`.
+  - Merged to `main` through a PR (branch protection: PR + 3 required checks).
+  - Tag `v0.4.0` on `main`; the release workflow publishes the 4 binaries + `SHA256SUMS`.
+- **Done when:** the release page lists the 4 archives, CI and Release workflows are green, and `schliffe --version` on the dev machine prints `0.4.0` after `install.sh`.
+- **Depends on:** the open PR being merged (human action: GitHub merge).
+
+### M10 — `schliffe report`: where the tokens go
+
+- **Goal:** turn the manual analysis done during development into a command, so the user can see which sessions and which kinds of content drive the bill — and change habits where it matters.
+- **Requirements:**
+  - Reads Claude Code transcripts (`~/.claude/projects/*/*.jsonl`) read-only; never sends anything anywhere.
+  - Per period (24h / 7d / all): total cost-equivalent tokens, split into cache re-reads, new input, output (weighted by relative price).
+  - Per session: responses, peak context size, share of the total — longest sessions first.
+  - Per content source: conversation, file reads (Read), MCP (by server/tool), shell commands, images — images counted by billed pixels, not base64 length.
+  - Schliffe's own savings shown as a share of the total (so the "~1%" is visible, not hidden).
+  - Fast on large transcripts (streamed, no full-file loads); fail-open on unknown line formats.
+- **Development requirements:** unit tests on a synthetic transcript; an e2e test running the binary on a fixture directory; README section; no new dependencies beyond what's there.
+- **Done when:** on the dev machine it reproduces the manual numbers (top sessions, ~75% cache re-reads, Figma share) within rounding.
+
+### M11 — Installer downloads the prebuilt binary
+
+- **Goal:** install in seconds without Rust.
+- **Requirements:**
+  - `install.sh` detects OS/arch, downloads the matching archive from the latest GitHub release, verifies it against `SHA256SUMS`, installs to `~/.schliffe/bin`.
+  - Falls back to building from source when there's no matching binary, no network, or the checksum fails (never installs an unverified binary).
+  - `--from-source` flag to force the build; same migration/shims/hook steps as today.
+  - `install.ps1`: same download for Windows (hook still not installed there).
+- **Development requirements:** shellcheck-clean script; tested live on macOS arm64 (download path) and with `--from-source`; README install section updated.
+- **Done when:** a fresh macOS user without Rust installs with one command in under 30 seconds.
+- **Depends on:** M9 (a release with binaries).
+
+### M12 — Figma `get_design_context` trimming (measure first)
+
+- **Goal:** cut noise from the largest single MCP payload seen in real use (~974k tokens in a week, ~23k per call) without changing the design information.
+- **Requirements:**
+  - **Measure first:** capture real responses (with the user's permission, from their own files) and quantify each candidate: `data-name` layer names, repeated boilerplate instructions, redundant attributes.
+  - Only lossless-for-implementation cuts: never classes, never `data-node-id` (used to drill into child nodes), never annotations, never asset URLs.
+  - Applied in the PostToolUse hook, only for Figma's `get_design_context`; recoverable via `schliffe show`.
+- **Development requirements:** fixtures from real responses; a test that the trimmed code still contains every class, node id, text and asset reference of the original.
+- **Done when:** measured saving is reported; implemented only if ≥10% per call.
+- **Needs from the user:** a couple of real Figma frames to measure on.
+
+### M13 — New filters guided by clean `stats`
+
+- **Goal:** cover the commands that actually produce large output for the model, now that `stats` only counts the model's commands.
+- **Requirements:** after a few days of normal use, rank "passed through with no filter" by output size (not only count); write a filter only where output is large and mostly noise; each filter with a real captured fixture and the usual rules (no inflation, fail-open, errors kept).
+- **Done when:** the top 3 large unfiltered commands (if any) have filters, or it's documented that none are worth one.
+- **Depends on:** a few days of real usage data.
