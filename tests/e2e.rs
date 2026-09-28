@@ -481,3 +481,32 @@ fn serde_json_string(fields: &[(&str, String)]) -> String {
     let body: Vec<String> = fields.iter().map(|(k, v)| format!("\"{k}\":{v}")).collect();
     format!("{{{}}}", body.join(","))
 }
+
+#[test]
+fn report_reads_transcripts() {
+    let sb = Sandbox::new();
+    let projects = sb.root.join("projects").join("-Users-jane-acme");
+    fs::create_dir_all(&projects).unwrap();
+    let now = "2099-01-01T00:00:00.000Z"; // always inside the period
+    fs::write(
+        projects.join("s.jsonl"),
+        format!(
+            "{{\"type\":\"assistant\",\"cwd\":\"/Users/jane/acme\",\"timestamp\":\"{now}\",\"message\":{{\"id\":\"m1\",\"usage\":{{\"input_tokens\":1,\"cache_read_input_tokens\":400000,\"cache_creation_input_tokens\":1000,\"output_tokens\":300}},\"content\":[]}}}}\n"
+        ),
+    )
+    .unwrap();
+    let out = run_with_stdin(
+        &sb,
+        &["report", "--days", "3"],
+        "",
+        &[(
+            "SCHLIFFE_CLAUDE_PROJECTS",
+            sb.root.join("projects").to_str().unwrap(),
+        )],
+    );
+    let text = stdout(&out);
+    assert!(out.status.success());
+    assert!(text.contains("1 sessions, 1 replies"), "{text}");
+    assert!(text.contains("acme"), "{text}");
+    assert!(text.contains("re-reading the conversation"), "{text}");
+}

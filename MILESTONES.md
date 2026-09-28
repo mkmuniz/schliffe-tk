@@ -196,7 +196,7 @@ Only 5 files needed a real content change (everything else was moved untouched):
 
 Order chosen by impact: ship what's already built, then attack the biggest cost (long conversations), then adoption, then the remaining sources of tokens.
 
-### M9 — Release v0.4.0
+### M9 — Release v0.4.0 ✅ (done 2026-09-27)
 
 - **Goal:** publish what's merged since v0.3.0 — the `cargo test` false-success fix, the prompt hook (pasted logs + long-conversation notice), shell-only agent detection, the RTK-gap filters.
 - **Requirements:**
@@ -206,7 +206,10 @@ Order chosen by impact: ship what's already built, then attack the biggest cost 
 - **Done when:** the release page lists the 4 archives, CI and Release workflows are green, and `schliffe --version` on the dev machine prints `0.4.0` after `install.sh`.
 - **Depends on:** the open PR being merged (human action: GitHub merge).
 
-### M10 — `schliffe report`: where the tokens go
+### M10 — `schliffe report`: where the tokens go ✅ (done 2026-09-27)
+
+Validated against an independent calculation on the dev machine's real transcripts: identical session/reply counts and cost split (15 sessions, 3,319 replies, 71% re-reads / 18% new content / 11% output), in ~0.6 s. Findings while validating: one reply spans several transcript lines (deduplicated by message id); thinking is billed but not re-read (shown separately); the transcript folder name can't be decoded into the project folder reliably (the session's most frequent `cwd` is used instead); the manual analysis had over-counted Figma by measuring embedded screenshots by base64 length.
+
 
 - **Goal:** turn the manual analysis done during development into a command, so the user can see which sessions and which kinds of content drive the bill — and change habits where it matters.
 - **Requirements:**

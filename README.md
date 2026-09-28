@@ -66,6 +66,31 @@ passed through with no filter (candidates for a new rule):
 
 `stats` logs only command names and sizes (`~/.schliffe/stats.log`) — never arguments or output.
 
+### Where the rest of the tokens go
+
+`stats` only sees what passes through Schliffe. `schliffe report [--days N]` (default 7) reads Claude Code's own transcripts — read-only, nothing leaves the machine — and shows the whole bill:
+
+```text
+where the cost is
+  re-reading the conversation (cache)      108.6M   71%
+  new content entering it                   27.3M   18%
+  the model's replies                       10.5M  6.9%
+  the model's thinking                       5.6M  3.7%
+
+sessions that cost the most
+  fleury-grupo-fleury              903 replies  peak context   967k     48.0M   32%
+  acs-frontend                     483 replies  peak context   807k     29.5M   19%
+
+what fills the conversations (tokens added; each is then re-read every reply)
+  model replies                              2.1M   65%
+  shell commands (Bash)                      573k   18%
+  MCP: figma                                 144k  4.4%
+
+schliffe cut ~191k tokens of command/MCP/image output (19% of what that output would have been) — 0.1% of the total cost directly
+```
+
+Costs are weighted by relative price (cache re-read 0.1×, new input 1.25×, output 5×); images count by billed pixels, not by the size of their base64.
+
 ## Results
 
 Measured on real repositories, bytes before → after (tokens ≈ bytes / 4):
