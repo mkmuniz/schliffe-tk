@@ -2,6 +2,11 @@
 
 All notable changes to this project are recorded here. Format loosely inspired by [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- `schliffe report [--days N]`: where the tokens of Claude Code sessions go, from its transcripts (read-only) — cost split into re-reads / new content / replies / thinking, the most expensive sessions with their peak context, what fills the conversations by source (conversation, shell, MCP per server, file reads, images by billed pixels), Schliffe's share, and up to three levers tied to the numbers.
+
 ## [0.4.0] — 2026-09-27
 
 ### Fixed

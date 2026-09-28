@@ -171,6 +171,20 @@ fn human_tokens(bytes: u64) -> String {
     }
 }
 
+/// Bytes Schliffe removed since `since` (for `schliffe report`).
+pub fn saved_bytes_since(since: u64) -> u64 {
+    let content = stats_file()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .unwrap_or_default();
+    content
+        .lines()
+        .filter_map(parse)
+        .filter(|e| e.ts >= since)
+        .filter_map(|e| e.sizes)
+        .map(|(b, a)| b.saturating_sub(a))
+        .sum()
+}
+
 /// The `schliffe stats` report.
 pub fn report() -> String {
     let path = stats_file();

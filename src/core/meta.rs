@@ -70,6 +70,20 @@ pub fn run(args: &[String]) -> ExitCode {
         }
         [cmd, sub] if cmd == "hook" && sub == "install" => bornes::hook::install(),
         [cmd, sub] if cmd == "hook" && sub == "uninstall" => bornes::hook::uninstall(),
+        [cmd] if cmd == "report" => {
+            print!("{}", crate::core::report::run(7));
+            ExitCode::SUCCESS
+        }
+        [cmd, flag, n] if cmd == "report" && flag == "--days" => match n.parse::<u64>() {
+            Ok(days) if days > 0 => {
+                print!("{}", crate::core::report::run(days));
+                ExitCode::SUCCESS
+            }
+            _ => {
+                eprintln!("schliffe: '--days' needs a positive number, got '{n}'");
+                ExitCode::FAILURE
+            }
+        },
         [cmd] if cmd == "stats" => {
             print!("{}", crate::core::stats::report());
             ExitCode::SUCCESS
@@ -95,7 +109,7 @@ pub fn run(args: &[String]) -> ExitCode {
         },
         _ => {
             eprintln!(
-                "usage: schliffe --version | schliffe stats | schliffe hook install|uninstall | schliffe show <hash> | schliffe store clear | schliffe store gc | schliffe compress [--sentences N]"
+                "usage: schliffe --version | schliffe stats | schliffe report [--days N] | schliffe hook install|uninstall | schliffe show <hash> | schliffe store clear | schliffe store gc | schliffe compress [--sentences N]"
             );
             ExitCode::FAILURE
         }
