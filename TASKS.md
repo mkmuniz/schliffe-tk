@@ -8,7 +8,7 @@ Every item here comes from a gap already recorded in `KNOWN_ISSUES.md` (which ex
 - [x] Build and test Schliffe on real macOS — native build + 41 tests on Apple Silicon (2026-09-24); `macos-latest` job added to CI.
 - [x] Test `install.sh`'s `zsh` path live — validated on macOS (2026-09-24) with `zsh -lic`/`-lc`/`-ic`; the `.zshrc` line now goes at the END (after nvm), not the top.
 - [x] Release pipeline — `.github/workflows/release.yml` builds Linux x86_64, macOS arm64/x86_64 and Windows x86_64 binaries on a `v*` tag and attaches them (+ SHA256SUMS) to a GitHub Release. Not run yet (needs a tag push).
-- [ ] Make `install.sh`/`install.ps1` download the prebuilt binary from the latest release instead of building from source (once a release exists).
+- [x] `install.sh`/`install.ps1` download the prebuilt binary from the latest release, verified against `SHA256SUMS` (M11, 2026-09-27).
 - [ ] Repeat the "how does Claude Code actually invoke a shell" check (login/interactive, etc.) on any new platform, before declaring activation ready there — don't assume it generalizes from WSL/Linux.
 - [x] Add the `schliffe` binary itself to the PATH — `install.sh` now links `~/.schliffe/shims/schliffe`.
 

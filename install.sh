@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Schliffe installer — Linux/Mac/WSL (specs.md §5.1, M8).
 #
-# v1 (2026-07-26): builds from source with `cargo`, doesn't download a
-# prebuilt binary — there's no release/CDN pipeline yet (specs §13, decision
-# recorded in MILESTONES.md). Does three things, all under $HOME, no sudo:
-# (1) `cargo build --release`; (2) creates symlinks in `~/.schliffe/shims/`
+# Since M11 (2026-09-27) it either downloads a verified prebuilt binary or
+# builds from source — see "how the binary is obtained" below. Then, all
+# under $HOME, no sudo: (1) installs the binary to ~/.schliffe/bin; (2) creates symlinks in `~/.schliffe/shims/`
 # for each command in the list below, all pointing to the same binary — what
 # decides what to filter is `invoked_name` (argv[0]) inside schliffe itself,
 # not the installer; (3) makes sure `~/.schliffe/shims` is at the front of
@@ -24,7 +23,36 @@
 # in the login+non-interactive case even while being present.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ---- how the binary is obtained (M11, 2026-09-27) --------------------------
+#
+#   curl -fsSL https://raw.githubusercontent.com/mkmuniz/schliffe-tk/main/install.sh | bash
+#       → downloads the prebuilt binary of the latest release (no Rust needed)
+#   bash install.sh                (inside a clone, Rust installed)
+#       → builds that checkout's code, as before
+#   bash install.sh --prebuilt     → downloads even inside a clone
+#   bash install.sh --from-source  → always builds
+#
+# A downloaded archive is installed only if its SHA-256 matches the
+# release's SHA256SUMS; otherwise the installer falls back to building from
+# source, or stops. It never installs an unverified binary.
+REPO="mkmuniz/schliffe-tk"
+MODE=auto
+for arg in "$@"; do
+    case "$arg" in
+        --prebuilt) MODE=prebuilt ;;
+        --from-source) MODE=source ;;
+        -h|--help)
+            sed -n '/^#   curl/,/^#   bash install.sh --from-source/p' "${BASH_SOURCE[0]:-/dev/null}" 2>/dev/null | sed 's/^# \{0,3\}//'
+            exit 0 ;;
+        *) echo "schliffe: unknown option '$arg' (use --prebuilt or --from-source)" >&2; exit 1 ;;
+    esac
+done
+
+# Empty when the script is piped into bash (no checkout on disk).
+SCRIPT_DIR=""
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 SHIMS_DIR="${SCHLIFFE_SHIMS_DIR:-$HOME/.schliffe/shims}"
 
 # Commands with a known filter today (Layer A: git/pytest/cargo — specs
@@ -33,19 +61,100 @@ SHIMS_DIR="${SCHLIFFE_SHIMS_DIR:-$HOME/.schliffe/shims}"
 # exists; it just needs one more symlink.
 DEFAULT_COMMANDS=(git cargo pytest docker npm pnpm yarn pip pip3 dotnet go terraform)
 
-if ! command -v cargo >/dev/null 2>&1; then
-    echo "schliffe: needs cargo (Rust) installed — https://rustup.rs" >&2
-    exit 1
-fi
+have_checkout() { [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/Cargo.toml" ]; }
 
-echo "schliffe: building (cargo build --release)..."
-(cd "$SCRIPT_DIR" && cargo build --release)
+target_triple() {
+    case "$(uname -s)/$(uname -m)" in
+        Darwin/arm64) echo aarch64-apple-darwin ;;
+        Darwin/x86_64) echo x86_64-apple-darwin ;;
+        Linux/x86_64) echo x86_64-unknown-linux-gnu ;;
+        *) echo "" ;;
+    esac
+}
 
-BIN_PATH="$SCRIPT_DIR/target/release/schliffe"
-if [ ! -x "$BIN_PATH" ]; then
-    echo "schliffe: build finished but couldn't find the binary at $BIN_PATH" >&2
-    exit 1
-fi
+sha256_of() {
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    fi
+}
+
+# Sets NEW_BIN on success. Every failure says why and returns 1.
+download_prebuilt() {
+    local triple tag tmp name base expected actual
+    triple="$(target_triple)"
+    if [ -z "$triple" ]; then
+        echo "schliffe: no prebuilt binary for $(uname -s)/$(uname -m)" >&2
+        return 1
+    fi
+    for tool in curl tar; do
+        command -v "$tool" >/dev/null 2>&1 || { echo "schliffe: '$tool' not found" >&2; return 1; }
+    done
+    tag="${SCHLIFFE_VERSION:-}"
+    if [ -z "$tag" ]; then
+        tag="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+            | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)" || true
+    fi
+    if [ -z "$tag" ]; then
+        echo "schliffe: couldn't reach GitHub to find the latest release" >&2
+        return 1
+    fi
+    tmp="$(mktemp -d)"
+    name="schliffe-$tag-$triple.tar.gz"
+    # SCHLIFFE_DOWNLOAD_BASE: test hook (e.g. a file:// folder with a
+    # tampered archive), not meant for regular use.
+    base="${SCHLIFFE_DOWNLOAD_BASE:-https://github.com/$REPO/releases/download/$tag}"
+    echo "schliffe: downloading $name..."
+    if ! curl -fsSL -o "$tmp/$name" "$base/$name" || ! curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"; then
+        echo "schliffe: download failed" >&2
+        return 1
+    fi
+    expected="$(awk -v n="$name" '$2 == n {print $1}' "$tmp/SHA256SUMS")"
+    actual="$(sha256_of "$tmp/$name")"
+    if [ -z "$expected" ] || [ -z "$actual" ] || [ "$expected" != "$actual" ]; then
+        echo "schliffe: checksum verification FAILED for $name — not installing it" >&2
+        return 1
+    fi
+    tar xzf "$tmp/$name" -C "$tmp"
+    NEW_BIN="$tmp/schliffe-$tag-$triple/schliffe"
+    if ! "$NEW_BIN" --version >/dev/null 2>&1; then
+        echo "schliffe: the downloaded binary doesn't run on this machine" >&2
+        return 1
+    fi
+    echo "schliffe: verified $("$NEW_BIN" --version) (SHA-256 matches the release)"
+}
+
+build_from_source() {
+    if ! have_checkout; then
+        echo "schliffe: building from source needs a clone: git clone https://github.com/$REPO.git" >&2
+        return 1
+    fi
+    if ! command -v cargo >/dev/null 2>&1; then
+        echo "schliffe: building from source needs Rust — https://rustup.rs" >&2
+        return 1
+    fi
+    echo "schliffe: building (cargo build --release)..."
+    (cd "$SCRIPT_DIR" && cargo build --release)
+    NEW_BIN="$SCRIPT_DIR/target/release/schliffe"
+    [ -x "$NEW_BIN" ] || { echo "schliffe: build finished but $NEW_BIN is missing" >&2; return 1; }
+}
+
+NEW_BIN=""
+case "$MODE" in
+    source) build_from_source || exit 1 ;;
+    prebuilt) download_prebuilt || { echo "schliffe: falling back to building from source" >&2; build_from_source || exit 1; } ;;
+    auto)
+        if have_checkout && command -v cargo >/dev/null 2>&1; then
+            build_from_source || exit 1
+        else
+            if have_checkout; then
+                echo "schliffe: Rust not found — installing the latest release instead of this checkout's code"
+            fi
+            download_prebuilt || { echo "schliffe: falling back to building from source" >&2; build_from_source || exit 1; }
+        fi ;;
+esac
+BIN_PATH="$NEW_BIN"
 
 # Installs a COPY of the binary outside the repo: shims pointing straight at
 # target/release would all break (git/npm/... "not found" in every shell)

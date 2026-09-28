@@ -1,54 +1,108 @@
 # Schliffe installer — native Windows (specs.md §5.1, M8).
 #
-# v1 (2026-07-26): doesn't cross-compile on its own (that's done on the
-# WSL/Linux side with `cargo build --release --target x86_64-pc-windows-gnu`
-# — see MILESTONES.md M8). This script assumes an `schliffe.exe` already
-# exists in one of the three locations below, or that `cargo` (a native
-# Windows toolchain) is available to build it on the spot. Symlinks are
+# Downloads the verified prebuilt binary, or builds from source (see below).
+# Symlinks are
 # deliberately not used — would need developer mode/admin on Windows; a
 # plain copy works just as well, since schliffe decides what to filter by the
 # file's NAME (argv[0]), not by whether it's a link or a copy.
+param(
+    # Download the latest release's prebuilt binary (verified against
+    # SHA256SUMS) even inside a clone with Rust installed.
+    [switch]$Prebuilt,
+    # Always build from source (needs a clone and Rust).
+    [switch]$FromSource
+)
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"  # Invoke-WebRequest is much faster without it
+
+# M11 (2026-09-27): same rules as install.sh.
+#   irm https://raw.githubusercontent.com/mkmuniz/schliffe-tk/main/install.ps1 | iex
+#       -> downloads the verified prebuilt binary (no Rust needed)
+#   ./install.ps1 inside a clone with Rust -> builds that checkout's code
+#   ./install.ps1 -Prebuilt / -FromSource  -> force one or the other
+# A downloaded archive is installed only if its SHA-256 matches the
+# release's SHA256SUMS; it never installs an unverified binary.
+$Repo = "mkmuniz/schliffe-tk"
 
 $ShimsDir = if ($env:SCHLIFFE_SHIMS_DIR) { $env:SCHLIFFE_SHIMS_DIR } else { Join-Path $env:USERPROFILE ".schliffe\shims" }
+$BinDir = if ($env:SCHLIFFE_BIN_DIR) { $env:SCHLIFFE_BIN_DIR } else { Join-Path $env:USERPROFILE ".schliffe\bin" }
 
 # Same list as install.sh (Layer A: git/pytest/cargo; Layer B:
 # docker/npm/terraform) — keep both in sync if the list changes.
 $DefaultCommands = @("git", "cargo", "pytest", "docker", "npm", "pnpm", "yarn", "pip", "pip3", "dotnet", "go", "terraform")
 
-function Find-SchliffeExe {
-    $candidates = @(
-        (Join-Path $PSScriptRoot "target\release\schliffe.exe"),
-        (Join-Path $PSScriptRoot "target\x86_64-pc-windows-gnu\release\schliffe.exe"),
-        (Join-Path $PSScriptRoot "schliffe.exe")
-    )
-    foreach ($c in $candidates) {
-        if (Test-Path $c) { return $c }
+# Empty when piped into iex (no checkout on disk).
+$HaveCheckout = $PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot "Cargo.toml"))
+$HaveCargo = [bool](Get-Command cargo -ErrorAction SilentlyContinue)
+
+function Get-Prebuilt {
+    $tag = $env:SCHLIFFE_VERSION
+    if (-not $tag) {
+        $tag = (Invoke-RestMethod -UseBasicParsing "https://api.github.com/repos/$Repo/releases/latest").tag_name
     }
-    return $null
-}
-
-$SchliffeExe = Find-SchliffeExe
-
-if (-not $SchliffeExe) {
-    $cargo = Get-Command cargo -ErrorAction SilentlyContinue
-    if ($cargo) {
-        Write-Host "schliffe: no ready-made schliffe.exe found, building with cargo (native Windows toolchain)..."
-        Push-Location $PSScriptRoot
-        try { cargo build --release } finally { Pop-Location }
-        $SchliffeExe = Find-SchliffeExe
+    if (-not $tag) { throw "couldn't find the latest release on GitHub" }
+    $triple = "x86_64-pc-windows-msvc"
+    $name = "schliffe-$tag-$triple.zip"
+    $base = if ($env:SCHLIFFE_DOWNLOAD_BASE) { $env:SCHLIFFE_DOWNLOAD_BASE } else { "https://github.com/$Repo/releases/download/$tag" }
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ("schliffe-" + [guid]::NewGuid())
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    Write-Host "schliffe: downloading $name..."
+    Invoke-WebRequest -UseBasicParsing -Uri "$base/$name" -OutFile (Join-Path $tmp $name)
+    Invoke-WebRequest -UseBasicParsing -Uri "$base/SHA256SUMS" -OutFile (Join-Path $tmp "SHA256SUMS")
+    $expected = $null
+    foreach ($line in Get-Content (Join-Path $tmp "SHA256SUMS")) {
+        $parts = $line -split '\s+'
+        if ($parts.Length -ge 2 -and $parts[1] -eq $name) { $expected = $parts[0].ToLower() }
     }
+    $actual = (Get-FileHash -Algorithm SHA256 (Join-Path $tmp $name)).Hash.ToLower()
+    if (-not $expected -or $expected -ne $actual) {
+        throw "checksum verification FAILED for $name - not installing it"
+    }
+    Expand-Archive -Path (Join-Path $tmp $name) -DestinationPath $tmp -Force
+    $exe = Join-Path $tmp "schliffe-$tag-$triple\schliffe.exe"
+    $version = & $exe --version
+    Write-Host "schliffe: verified $version (SHA-256 matches the release)"
+    return $exe
 }
 
-if (-not $SchliffeExe) {
-    Write-Error "schliffe: couldn't find schliffe.exe (checked target\release, target\x86_64-pc-windows-gnu\release, and next to the script) and cargo isn't available to build it. Run 'cargo build --release --target x86_64-pc-windows-gnu' on WSL first, or install Rust (https://rustup.rs) here."
-    exit 1
+function Build-FromSource {
+    if (-not $HaveCheckout) { throw "building from source needs a clone: git clone https://github.com/$Repo.git" }
+    if (-not $HaveCargo) { throw "building from source needs Rust - https://rustup.rs" }
+    Write-Host "schliffe: building (cargo build --release)..."
+    Push-Location $PSScriptRoot
+    try { cargo build --release } finally { Pop-Location }
+    $exe = Join-Path $PSScriptRoot "target\release\schliffe.exe"
+    if (-not (Test-Path $exe)) { throw "build finished but $exe is missing" }
+    return $exe
 }
+
+if ($FromSource) {
+    $SchliffeExe = Build-FromSource
+} elseif ($Prebuilt -or -not ($HaveCheckout -and $HaveCargo)) {
+    if ($HaveCheckout -and -not $Prebuilt) {
+        Write-Host "schliffe: Rust not found - installing the latest release instead of this checkout's code"
+    }
+    try {
+        $SchliffeExe = Get-Prebuilt
+    } catch {
+        Write-Host "schliffe: $($_.Exception.Message)"
+        Write-Host "schliffe: falling back to building from source"
+        $SchliffeExe = Build-FromSource
+    }
+} else {
+    $SchliffeExe = Build-FromSource
+}
+
+# A copy outside the checkout (a `cargo clean` must not break the shims).
+New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+$installed = Join-Path $BinDir "schliffe.exe"
+Copy-Item -Path $SchliffeExe -Destination $installed -Force
+$SchliffeExe = $installed
 
 Write-Host "schliffe: using binary at $SchliffeExe"
 
 New-Item -ItemType Directory -Force -Path $ShimsDir | Out-Null
-foreach ($cmd in $DefaultCommands) {
+foreach ($cmd in $DefaultCommands + @("schliffe")) {
     $dest = Join-Path $ShimsDir "$cmd.exe"
     Copy-Item -Path $SchliffeExe -Destination $dest -Force
 }

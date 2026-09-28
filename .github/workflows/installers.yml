@@ -1,0 +1,56 @@
+name: Installers
+
+# Runs the real installers on clean runners against the latest release:
+# the one-command download path (no Rust), the checksum check, and the
+# resulting binary. The only place install.ps1 runs on real Windows.
+on:
+  pull_request:
+    paths: ["install.sh", "install.ps1", ".github/workflows/installers.yml"]
+  workflow_dispatch:
+
+jobs:
+  unix:
+    name: install.sh (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: one-command install (piped, no checkout, no Rust in PATH)
+        run: |
+          export HOME="$RUNNER_TEMP/home1" && mkdir -p "$HOME"
+          cd "$RUNNER_TEMP"
+          cat "$GITHUB_WORKSPACE/install.sh" | PATH=/usr/bin:/bin bash
+          "$HOME/.schliffe/bin/schliffe" --version
+          test -L "$HOME/.schliffe/shims/git"
+      - name: tampered archive is refused
+        run: |
+          export HOME="$RUNNER_TEMP/home2" && mkdir -p "$HOME"
+          fake="$RUNNER_TEMP/fake" && mkdir -p "$fake/pkg"
+          case "$(uname -s)/$(uname -m)" in
+            Darwin/arm64) t=aarch64-apple-darwin ;; Darwin/x86_64) t=x86_64-apple-darwin ;; *) t=x86_64-unknown-linux-gnu ;;
+          esac
+          d="schliffe-v0.0.0-$t" && mkdir -p "$fake/pkg/$d" && printf '#!/bin/sh\necho evil\n' > "$fake/pkg/$d/schliffe" && chmod +x "$fake/pkg/$d/schliffe"
+          (cd "$fake/pkg" && tar czf "../$d.tar.gz" "$d")
+          echo "0000000000000000000000000000000000000000000000000000000000000000  $d.tar.gz" > "$fake/SHA256SUMS"
+          cd "$RUNNER_TEMP"
+          if cat "$GITHUB_WORKSPACE/install.sh" | PATH=/usr/bin:/bin SCHLIFFE_VERSION=v0.0.0 SCHLIFFE_DOWNLOAD_BASE="file://$fake" bash; then
+            echo "installer should have failed"; exit 1
+          fi
+          test ! -e "$HOME/.schliffe/bin/schliffe"
+
+  windows:
+    name: install.ps1 (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: prebuilt install
+        shell: pwsh
+        run: |
+          $env:USERPROFILE = Join-Path $env:RUNNER_TEMP "home"
+          New-Item -ItemType Directory -Force -Path $env:USERPROFILE | Out-Null
+          ./install.ps1 -Prebuilt
+          & (Join-Path $env:USERPROFILE ".schliffe\bin\schliffe.exe") --version
+          if (-not (Test-Path (Join-Path $env:USERPROFILE ".schliffe\shims\git.exe"))) { throw "shims missing" }

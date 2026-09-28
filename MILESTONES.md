@@ -222,7 +222,10 @@ Validated against an independent calculation on the dev machine's real transcrip
 - **Development requirements:** unit tests on a synthetic transcript; an e2e test running the binary on a fixture directory; README section; no new dependencies beyond what's there.
 - **Done when:** on the dev machine it reproduces the manual numbers (top sessions, ~75% cache re-reads, Figma share) within rounding.
 
-### M11 — Installer downloads the prebuilt binary
+### M11 — Installer downloads the prebuilt binary ✅ (done 2026-09-27)
+
+Validated on the dev machine (macOS arm64, isolated `$HOME`): one-command piped install with no Rust in `PATH` in ~2.3 s; a tampered archive (wrong SHA-256) refused with nothing installed; `--from-source`, `--prebuilt` and "clone without Rust" paths. `install.ps1` can't run here — the new `Installers` workflow runs it on a real Windows runner (first real Windows run of the installer), plus `install.sh` on Linux/macOS runners.
+
 
 - **Goal:** install in seconds without Rust.
 - **Requirements:**
