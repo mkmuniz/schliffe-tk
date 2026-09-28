@@ -584,8 +584,12 @@ mod tests {
         format!("{v}\n")
     }
 
-    fn fixture() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("schliffe-report-{}", std::process::id()));
+    /// `name` keeps each test in its own folder: tests run in parallel, and
+    /// a shared folder was deleted by one test while another wrote to it
+    /// (failed on CI, 2026-09-27).
+    fn fixture(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("schliffe-report-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let p = dir.join("-Users-jane-Desktop-acme-site");
         std::fs::create_dir_all(&p).unwrap();
@@ -614,7 +618,7 @@ mod tests {
 
     #[test]
     fn totals_dedupe_split_replies_and_attribute_sources() {
-        let dir = fixture();
+        let dir = fixture("totals");
         let r = build(&dir, 0, 7, 500);
         assert_eq!(r.sessions.len(), 1);
         let s = &r.sessions[0];
@@ -635,7 +639,7 @@ mod tests {
 
     #[test]
     fn period_filter_uses_timestamps() {
-        let dir = fixture();
+        let dir = fixture("period");
         let after_all = parse_iso("2026-09-28T00:00:00Z").unwrap();
         let r = build(&dir, after_all, 1, 0);
         assert!(r.sessions.is_empty());
