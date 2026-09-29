@@ -5,6 +5,7 @@ All notable changes to this project are recorded here. Format loosely inspired b
 ## [Unreleased]
 
 ### Added
+- **One-command install**: `curl -fsSL https://raw.githubusercontent.com/mkmuniz/schliffe-tk/main/install.sh | bash` downloads the latest release's prebuilt binary, verifies it against `SHA256SUMS` (never installs an unverified archive), and needs no Rust. Inside a clone with Rust it still builds that checkout; `--prebuilt` / `--from-source` force either. `install.ps1` gets the same (`-Prebuilt` / `-FromSource`, `irm … | iex`). A new `Installers` workflow runs both installers on Linux, macOS and Windows runners, including a tampered-archive check.
 - `schliffe report [--days N]`: where the tokens of Claude Code sessions go, from its transcripts (read-only) — cost split into re-reads / new content / replies / thinking, the most expensive sessions with their peak context, what fills the conversations by source (conversation, shell, MCP per server, file reads, images by billed pixels), Schliffe's share, and up to three levers tied to the numbers.
 
 ## [0.4.0] — 2026-09-27

@@ -32,18 +32,26 @@ cd0a83980c 2026-09-24 23:21 Mkmuniz — Layer B: stderr support and first batch 
 
 ## Install
 
-Requires [Rust](https://rustup.rs). Takes about 2 minutes (it builds from source).
+One command — downloads the prebuilt binary of the latest release, verifies its SHA-256, and sets everything up (a few seconds, no Rust needed):
 
-1. Clone and install:
-   ```bash
-   git clone https://github.com/mkmuniz/schliffe-tk.git
-   cd schliffe-tk
-   bash install.sh
-   ```
-2. Open a new terminal. In VS Code, run **Reload Window**.
-3. Start a new Claude Code session.
+```bash
+curl -fsSL https://raw.githubusercontent.com/mkmuniz/schliffe-tk/main/install.sh | bash
+```
 
-`install.sh` puts the shims first in your `PATH` (bash and zsh), registers the Claude Code hook, and migrates an old Elagix install if there is one. Windows: see [Platforms](#platforms).
+Then open a new terminal (in VS Code: **Reload Window**) and start a new Claude Code session.
+
+It puts the shims first in your `PATH` (bash and zsh), registers the Claude Code hooks, and migrates an old Elagix install if there is one. An archive whose checksum doesn't match the release is never installed. Windows: see [Platforms](#platforms).
+
+<details>
+<summary>From a clone / building from source</summary>
+
+```bash
+git clone https://github.com/mkmuniz/schliffe-tk.git && cd schliffe-tk
+bash install.sh                 # with Rust: builds this checkout; without Rust: installs the latest release
+bash install.sh --prebuilt      # download even inside a clone
+bash install.sh --from-source   # always build (needs Rust)
+```
+</details>
 
 ## Check it's working
 
@@ -180,7 +188,7 @@ Commands: `schliffe stats` · `schliffe show <hash>` · `schliffe hook install|u
 |---|---|---|
 | macOS | ✅ validated (zsh) | ✅ validated |
 | Linux / WSL | ✅ validated (bash) | ✅ |
-| Windows (native) | ⚠️ `install.ps1`, only partially validated | ❌ Claude Code ignores hook output replacement there |
+| Windows (native) | ⚠️ `install.ps1` (`irm https://raw.githubusercontent.com/mkmuniz/schliffe-tk/main/install.ps1 \| iex`), install tested on CI; filtering not validated on a real machine | ❌ Claude Code ignores hook output replacement there |
 
 Prebuilt binaries for all four targets are attached to each [release](https://github.com/mkmuniz/schliffe-tk/releases/latest).
 
