@@ -37,6 +37,16 @@ $HaveCargo = [bool](Get-Command cargo -ErrorAction SilentlyContinue)
 
 function Get-Prebuilt {
     $tag = $env:SCHLIFFE_VERSION
+    # github.com/<repo>/releases/latest redirects to .../releases/tag/<tag>;
+    # preferred over api.github.com, which rate-limits unauthenticated
+    # requests per IP (403 on shared CI runners).
+    if (-not $tag) {
+        try {
+            $resp = Invoke-WebRequest -UseBasicParsing -Method Head -Uri "https://github.com/$Repo/releases/latest"
+            $final = if ($resp.BaseResponse.ResponseUri) { $resp.BaseResponse.ResponseUri.AbsoluteUri } else { $resp.BaseResponse.RequestMessage.RequestUri.AbsoluteUri }
+            if ($final -match '/releases/tag/([^/?]+)') { $tag = $Matches[1] }
+        } catch { }
+    }
     if (-not $tag) {
         $tag = (Invoke-RestMethod -UseBasicParsing "https://api.github.com/repos/$Repo/releases/latest").tag_name
     }

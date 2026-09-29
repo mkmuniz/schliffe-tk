@@ -92,6 +92,13 @@ download_prebuilt() {
         command -v "$tool" >/dev/null 2>&1 || { echo "schliffe: '$tool' not found" >&2; return 1; }
     done
     tag="${SCHLIFFE_VERSION:-}"
+    # github.com/<repo>/releases/latest redirects to .../releases/tag/<tag>.
+    # Preferred over api.github.com, which rate-limits unauthenticated
+    # requests per IP (60/h) and returned 403 on shared CI runners.
+    if [ -z "$tag" ]; then
+        tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" \
+            | sed -n 's#.*/releases/tag/\([^/?]*\).*#\1#p')" || true
+    fi
     if [ -z "$tag" ]; then
         tag="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
             | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)" || true
