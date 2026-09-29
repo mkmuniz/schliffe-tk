@@ -510,3 +510,81 @@ fn report_reads_transcripts() {
     assert!(text.contains("acme"), "{text}");
     assert!(text.contains("re-reading the conversation"), "{text}");
 }
+
+/// `schliffe show <hash>` used to build a path straight from its argument:
+/// `schliffe show ../../../../etc/passwd` read arbitrary files. Schliffe's
+/// own recovery hints ("schliffe show <hash>") live in text the model
+/// reads, so a crafted log could have talked an agent into running one.
+#[test]
+fn show_refuses_anything_that_is_not_a_store_hash() {
+    let sb = git_sandbox();
+    let secret = sb.root.join("private-key.txt");
+    fs::write(&secret, "SUPER-SECRET-VALUE").unwrap();
+
+    // The hash from a real recovery hint still works, so the store itself
+    // isn't broken by the validation.
+    let hint = stdout(&sb.run("git", &["log"], true, &[]));
+    let good = hint
+        .split("schliffe show ")
+        .nth(1)
+        .and_then(|r| r.split(')').next())
+        .expect("recovery hint")
+        .to_string();
+    let shown = sb.run("schliffe", &["show", &good], false, &[]);
+    assert_eq!(
+        stdout(&shown),
+        GIT_LOG,
+        "hash={good:?} stderr={:?}",
+        stderr(&shown)
+    );
+
+    for attempt in [
+        "../../../../../../etc/passwd",
+        "../../private-key.txt",
+        "..",
+        "/etc/passwd",
+        "cas/../../../private-key.txt",
+    ] {
+        let out = sb.run("schliffe", &["show", attempt], false, &[]);
+        assert!(!out.status.success(), "accepted {attempt:?}");
+        assert!(
+            !stdout(&out).contains("SUPER-SECRET") && !stdout(&out).contains("root:"),
+            "leaked a file with {attempt:?}: {}",
+            stdout(&out)
+        );
+    }
+    // A multi-byte argument used to panic while slicing the first 2 bytes.
+    let out = sb.run("schliffe", &["show", "€xyz"], false, &[]);
+    assert!(!stderr(&out).contains("panicked"), "{}", stderr(&out));
+}
+
+/// The store keeps raw command output — a `git diff` touching a `.env`, a
+/// stack trace with a connection string. It was world-readable (0644).
+#[test]
+#[cfg(unix)]
+fn everything_written_is_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let sb = git_sandbox();
+    sb.run("git", &["log"], true, &[]);
+
+    let mut checked = 0;
+    let mut stack = vec![sb.root.join(".schliffe")];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        let mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o077;
+        assert_eq!(mode, 0, "directory readable by others: {}", dir.display());
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o077;
+                assert_eq!(mode, 0, "file readable by others: {}", path.display());
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 0, "nothing was written, so nothing was checked");
+}

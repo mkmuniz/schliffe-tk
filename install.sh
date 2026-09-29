@@ -305,6 +305,12 @@ else
     echo "schliffe: created $INTERACTIVE_FILE with schliffe's PATH"
 fi
 
+# The tree holds raw command output (a `git diff` over a `.env`, a stack
+# trace with a connection string) and the user's pasted prompts. New files
+# are written owner-only by the binary itself; this repairs an install made
+# before that (2026-09-28 hardening) in one pass.
+chmod -R go-rwx "$HOME/.schliffe" 2>/dev/null || true
+
 # Claude Code hook (bornes/hook): covers what the PATH shim can't reach —
 # remote MCP servers (HTTP/OAuth, e.g. Figma) and images. Registered only if
 # Claude Code is present (~/.claude exists); idempotent, keeps a backup of

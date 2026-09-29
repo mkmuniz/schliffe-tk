@@ -26,12 +26,28 @@ use std::process::{Command, Stdio};
 /// real `git` and re-invoked itself until the OS refused to fork (EAGAIN).
 /// So any candidate that is this very executable (after following symlinks)
 /// is skipped too, whatever folder it sits in.
+///
+/// Third guard (2026-09-28 hardening): `$PATH` entries that aren't absolute
+/// are skipped. A relative entry — `.`, an empty entry from a stray `:` —
+/// resolves against the *current directory*, so an agent working inside a
+/// cloned repository that ships an executable named `git` would run it.
+/// Verified exploitable before this landed: with `.` in `$PATH`, a file
+/// `./git` in an untrusted checkout was executed. A shell does the same,
+/// but Schliffe sits in front of every command an agent runs on untrusted
+/// code, so it refuses instead. `SCHLIFFE_ALLOW_RELATIVE_PATH=1` restores
+/// the old behavior for anyone who relies on it.
 pub fn resolve_real_binary(name: &str) -> Option<PathBuf> {
     let own_dir = shims_dir();
     let own_exe = env::current_exe().ok().and_then(|p| p.canonicalize().ok());
     let path_var = env::var_os("PATH")?;
+    let allow_relative = env::var_os("SCHLIFFE_ALLOW_RELATIVE_PATH").is_some_and(|v| !v.is_empty());
 
     for dir in env::split_paths(&path_var) {
+        if !allow_relative && !dir.is_absolute() {
+            // Also covers the empty entry (`PATH=/usr/bin:`), which means
+            // "the current directory" to the shell.
+            continue;
+        }
         let dir_canon = dir.canonicalize().unwrap_or_else(|_| dir.clone());
         if Some(&dir_canon) == own_dir.as_ref() {
             continue;
@@ -156,6 +172,8 @@ fn parent_name() -> Option<String> {
 
 #[cfg(target_os = "macos")]
 fn parent_name() -> Option<String> {
+    // SAFETY: libproc is part of libSystem, always linked on macOS; this
+    // is the documented signature of proc_pidpath(2).
     unsafe extern "C" {
         // libproc, part of libSystem (always linked on macOS).
         fn proc_pidpath(pid: i32, buffer: *mut u8, buffersize: u32) -> i32;
@@ -238,6 +256,37 @@ mod tests {
     #[test]
     fn plain_pipe_without_agent_is_not_filtered() {
         assert!(!agent_active_from(with_vars(&[]), || true));
+    }
+
+    /// A relative `$PATH` entry resolves against the current directory, so
+    /// an untrusted checkout shipping an executable named `git` would be
+    /// run. Verified exploitable before the guard existed.
+    #[test]
+    fn relative_path_entries_are_never_used() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("schliffe-path-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("repo")).unwrap();
+        let planted = dir.join("repo").join("schliffe-fake-tool");
+        std::fs::write(&planted, "#!/bin/sh\necho pwned\n").unwrap();
+        std::fs::set_permissions(&planted, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let previous = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.join("repo")).unwrap();
+        // SAFETY: single-threaded section of this test; restored below.
+        unsafe {
+            std::env::set_var("PATH", ".::/nonexistent");
+        }
+        let found = resolve_real_binary("schliffe-fake-tool");
+        // SAFETY: same single-threaded section; restores the environment for
+        // whatever runs next in this process.
+        unsafe {
+            std::env::set_var("PATH", "/usr/bin:/bin");
+        }
+        std::env::set_current_dir(previous).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(found.is_none(), "resolved a relative PATH entry: {found:?}");
     }
 
     #[test]

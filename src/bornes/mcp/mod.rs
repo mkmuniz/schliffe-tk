@@ -3,7 +3,7 @@ mod schema;
 
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Command, ExitCode, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -88,7 +88,12 @@ pub fn run(server_cmd: &str, server_args: &[String], lazy_schemas: bool) -> Exit
     // the thread's copy matters, and it drops when the CLIENT's stdin closes.
     drop(child_stdin);
 
-    let reader = BufReader::new(child_stdout);
+    // Bounded (2026-09-28 hardening): the server on the other end is a
+    // third-party process. `lines()` would grow a single line without
+    // limit, so a hostile or broken server could exhaust memory just by
+    // never sending a newline. Past the cap the proxy stops forwarding —
+    // pending requests then get the "server exited" error below.
+    let reader = BufReader::new(child_stdout.take(crate::core::secure::MAX_INPUT_BYTES as u64));
     for line in reader.lines() {
         let Ok(line) = line else { break };
         if line.trim().is_empty() {

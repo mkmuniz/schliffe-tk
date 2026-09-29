@@ -1,5 +1,6 @@
 pub mod logs;
 
+use crate::core::secure::{read_limited, write_private};
 use crate::core::{stats, store};
 use serde_json::{Value, json};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -26,10 +27,11 @@ use std::process::{Command, ExitCode, Stdio};
 /// into the model's context. Fail-open: any error means "let the prompt
 /// through, say nothing".
 pub fn run_user_prompt_submit() -> ExitCode {
-    let mut raw = String::new();
-    if std::io::stdin().read_to_string(&mut raw).is_err() {
+    // Bounded: a runaway prompt must not make the hook allocate without
+    // limit. Over the cap the prompt goes through untouched.
+    let Some(raw) = read_limited(std::io::stdin()) else {
         return ExitCode::SUCCESS;
-    }
+    };
     let Ok(input) = serde_json::from_str::<Value>(&raw) else {
         return ExitCode::SUCCESS;
     };
@@ -135,7 +137,7 @@ impl State {
                 let _ = std::fs::create_dir_all(dir);
             }
             if let Ok(s) = serde_json::to_string(self) {
-                let _ = std::fs::write(p, s);
+                let _ = write_private(&p, s.as_bytes());
             }
         }
     }
@@ -386,8 +388,10 @@ fn save_prompts(original: &str, compact: &str) -> Option<String> {
     let home = std::env::var_os("HOME")?;
     let dir = PathBuf::from(home).join(".schliffe").join("prompts");
     std::fs::create_dir_all(&dir).ok()?;
-    std::fs::write(dir.join("last-original.txt"), original).ok()?;
-    std::fs::write(dir.join("last-compact.txt"), compact).ok()?;
+    // Owner-only: this is the user's prompt verbatim, which can carry
+    // anything they pasted (tokens in a log, a connection string).
+    write_private(&dir.join("last-original.txt"), original.as_bytes()).ok()?;
+    write_private(&dir.join("last-compact.txt"), compact.as_bytes()).ok()?;
     Some(dir.to_string_lossy().into_owned())
 }
 

@@ -1,9 +1,9 @@
 pub mod image;
 
 use crate::bornes::mcp::compress;
+use crate::core::secure::{read_limited, write_private};
 use crate::core::{stats, store};
 use serde_json::{Value, json};
-use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -26,16 +26,17 @@ use std::process::ExitCode;
 /// Claude Code also discards a replacement that doesn't match the tool's
 /// output schema, so a wrong guess about the Read shape can't break a read.
 pub fn run_post_tool_use() -> ExitCode {
-    let mut raw = String::new();
-    if std::io::stdin().read_to_string(&mut raw).is_err() {
+    // Bounded: a hostile MCP server could otherwise hand us an unbounded
+    // result. Over the cap the tool output is left untouched.
+    let Some(raw) = read_limited(std::io::stdin()) else {
         return ExitCode::SUCCESS;
-    }
+    };
     // Diagnostics: keep a copy of what Claude Code sent, to learn the exact
     // result shapes of tools that aren't documented (e.g. Read on images).
     if let Ok(dir) = std::env::var("SCHLIFFE_HOOK_DUMP") {
-        let _ = std::fs::create_dir_all(&dir);
         let name = format!("{}-{}.json", now_nanos(), std::process::id());
-        let _ = std::fs::write(PathBuf::from(dir).join(name), &raw);
+        // Diagnostics contain whole tool results — owner-only.
+        let _ = write_private(&PathBuf::from(dir).join(name), raw.as_bytes());
     }
     let Ok(input) = serde_json::from_str::<Value>(&raw) else {
         return ExitCode::SUCCESS;

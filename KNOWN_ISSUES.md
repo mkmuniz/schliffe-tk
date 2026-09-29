@@ -68,3 +68,13 @@ A consolidation of everything marked "left for later" across M0-M8 (previously s
 - **Library vs. app frames are guessed by prefix** (`node_modules`, `java.`, `org.springframework.`, `System.`, `Microsoft.`…). A project whose own namespace starts like a framework would see its frames counted as library frames — still recoverable via `schliffe show`.
 - **Context size comes from the session transcript** (the latest reply's usage); the notice appears on the prompt after the threshold was crossed.
 - **Not native Windows** (same as the other hook).
+
+## Security
+
+Threat model, fixed vulnerabilities and residual risks live in `SECURITY.md`. The gaps that remain open:
+
+- **`curl … | bash` trusts GitHub.** `SHA256SUMS` proves the download wasn't altered in transit, not that the release itself is honest. Signed releases (sigstore/cosign) aren't implemented; `--from-source` from a clone you've read is the stricter path.
+- **A script the model runs through a shell is still filtered** (`bash deploy.sh` → `git diff`): indistinguishable from a command the model ran. `SCHLIFFE_DISABLE=1` inside such a script.
+- **Library-vs-app frame detection is a heuristic**, so a project namespaced like a framework can have its own frames collapsed (recoverable, never deleted).
+- **No protection against code already running as your user** — Schliffe defends against *other* accounts on the machine.
+- **`deny.toml`'s banned-crate list is a denylist**, so it names the capabilities Schliffe must never gain rather than proving the absence of all others; `cargo audit`/`cargo deny` cover the rest.

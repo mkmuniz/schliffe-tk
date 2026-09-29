@@ -1,0 +1,61 @@
+# cargo-deny — supply-chain policy (2026-09-28 hardening).
+#
+# Schliffe runs in front of every command an AI agent executes, on the
+# developer's machine, with their files and their shell. A compromised
+# dependency would inherit all of that, so the dependency set is kept
+# small, audited on every PR, and fenced in by the rules below.
+
+[graph]
+all-features = true
+
+[advisories]
+# Any known vulnerability or unmaintained crate fails the build.
+yanked = "deny"
+ignore = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"       # no "*" version requirements
+# Crates that would give Schliffe capabilities it must not have. It is an
+# offline, local tool: it opens no sockets and runs no code it downloads.
+# (`install.sh` uses the system `curl`; the binary itself never does.)
+deny = [
+    { name = "reqwest", reason = "Schliffe must not make network requests" },
+    { name = "hyper", reason = "Schliffe must not make network requests" },
+    { name = "ureq", reason = "Schliffe must not make network requests" },
+    { name = "curl", reason = "Schliffe must not make network requests" },
+    { name = "tokio", reason = "no async runtime is needed; large surface" },
+    { name = "openssl", reason = "no TLS in the binary" },
+    { name = "openssl-sys", reason = "no TLS in the binary" },
+    { name = "git2", reason = "Schliffe shells out to the real git, on purpose" },
+    { name = "libgit2-sys", reason = "Schliffe shells out to the real git, on purpose" },
+    { name = "mlua", reason = "no embedded scripting: filters are declarative TOML" },
+    { name = "rlua", reason = "no embedded scripting: filters are declarative TOML" },
+    { name = "rhai", reason = "no embedded scripting: filters are declarative TOML" },
+    { name = "libloading", reason = "no dynamic plugin loading" },
+]
+
+[licenses]
+# Permissive only — anything else has to be a deliberate decision.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "Unlicense",
+    "BSL-1.0",
+]
+confidence-threshold = 0.9
+
+[sources]
+# Only crates.io. A dependency pulled straight from a git URL would sit
+# outside crates.io's (modest) publishing controls and outside cargo-audit.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

@@ -152,6 +152,17 @@ Before a prompt reaches the model, Schliffe checks two things (no model involved
 
 Messages follow the language you write in (Portuguese or English). What each kind of log keeps and drops: [`docs/pasted-logs.md`](docs/pasted-logs.md).
 
+## Security
+
+Schliffe sits in front of every command an AI agent runs and stores what those commands printed, so its inputs (command output, MCP results, pasted logs, images) are treated as hostile and its output is assumed to be read by something that acts on it.
+
+- **No network, no telemetry, no scripting, no plugins.** The binary opens no sockets; network-capable and scripting crates are *banned* from the dependency graph by `deny.toml`.
+- **Everything it writes is owner-only** (`0600` files, `0700` directories) — the store holds raw command output, which can contain secrets.
+- **Audited on every PR and daily**: `cargo audit`, `cargo deny` (advisories, bans, licences, registries), `gitleaks`, and a regression test for each vulnerability ever found.
+- **Releases are checksum-verified**; the installer refuses an archive whose SHA-256 doesn't match.
+
+Threat model, the vulnerabilities found and fixed (with how each was exploited), residual risks and how to reproduce the audit: [`SECURITY.md`](SECURITY.md).
+
 ## Safety rules
 
 Compression that turns "interrupted" into "success" misleads the agent in later steps ([arXiv 2607.13071](https://arxiv.org/abs/2607.13071)). So:
@@ -179,6 +190,7 @@ Details and the evidence behind each rule: [`specs.md`](specs.md) §4.
 | `SCHLIFFE_PROMPT_LOGS` | Pasted logs: `block` (default, copy compact version), `tip` (just a hint), `off` |
 | `SCHLIFFE_CONTEXT_WARN_AT` | Context notice thresholds in tokens (default `200000,400000,600000,800000`, `0` = off) |
 | `SCHLIFFE_NO_HOOK=1` | `install.sh`: skip the Claude Code hooks |
+| `SCHLIFFE_ALLOW_RELATIVE_PATH=1` | Allow relative `$PATH` entries when resolving the real binary (off by default: an untrusted repo could ship its own `git`) |
 
 Commands: `schliffe stats` · `schliffe show <hash>` · `schliffe hook install|uninstall` · `schliffe mcp` · `schliffe compress` · `schliffe store gc|clear` · `schliffe --version`.
 
@@ -253,6 +265,7 @@ Schliffe exists because the hook-based way of doing this — having Claude Code 
 - [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) — gaps and limitations, with the reasons.
 - [`TASKS.md`](TASKS.md) — backlog.
 - [`MILESTONES.md`](MILESTONES.md) — development history and live validations.
+- [`SECURITY.md`](SECURITY.md) — threat model, fixed vulnerabilities, residual risks, disclosure.
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes.
 
 Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md) · License: [Apache 2.0](LICENSE).

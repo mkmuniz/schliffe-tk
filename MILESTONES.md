@@ -254,3 +254,11 @@ Validated on the dev machine (macOS arm64, isolated `$HOME`): one-command piped 
 - **Requirements:** after a few days of normal use, rank "passed through with no filter" by output size (not only count); write a filter only where output is large and mostly noise; each filter with a real captured fixture and the usual rules (no inflation, fail-open, errors kept).
 - **Done when:** the top 3 large unfiltered commands (if any) have filters, or it's documented that none are worth one.
 - **Depends on:** a few days of real usage data.
+
+### M14 — Security hardening ✅ (done 2026-09-28)
+
+A full pass over the attack surface, driven by the fact that Schliffe runs in front of every command an AI agent executes and stores what they print. Each finding below was **verified exploitable on a real machine first**, then fixed, then locked in by a regression test the new `Security` workflow runs on every PR and daily.
+
+Found and fixed: arbitrary file read through `schliffe show` (path traversal, reachable via prompt injection because Schliffe's own recovery hints are text the model reads); code execution through a relative `$PATH` entry (a planted `./git` in an untrusted checkout ran); secrets written world-readable (the store holds raw command output); a symlink at a store destination being written through; a panic on a multi-byte argument; unbounded reads from hook stdin and from a hostile MCP server; and an image decompression bomb that was only refused by a dependency's default.
+
+Tooling added: `cargo audit` (0 advisories over 60 dependencies), `cargo deny` with a policy that bans network, scripting and dynamic-loading crates outright — Schliffe must never gain those capabilities — plus licence and registry allow-lists; `gitleaks`; and a check that every `unsafe` carries a `SAFETY:` comment (two sites, both reviewed). `SECURITY.md` documents the threat model, each fix, and the residual risks.
