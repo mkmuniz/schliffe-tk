@@ -1,5 +1,5 @@
 use std::env;
-use std::io::IsTerminal;
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -197,7 +197,9 @@ fn parent_name() -> Option<String> {
 
 pub struct CapturedRun {
     pub stdout: Vec<u8>,
-    /// Only `Some` when `capture_stderr` was requested.
+    /// Oversized stdout has already been forwarded byte-for-byte.
+    pub stdout_streamed: bool,
+    /// Only `Some` when stderr was requested and stayed within the budget.
     pub stderr: Option<Vec<u8>>,
     pub exit_code: i32,
 }
@@ -211,7 +213,7 @@ pub fn run_captured(
     args: &[String],
     capture_stderr: bool,
 ) -> std::io::Result<CapturedRun> {
-    let output = Command::new(real_bin)
+    let mut child = Command::new(real_bin)
         .args(args)
         .stdin(Stdio::inherit())
         .stdout(Stdio::piped())
@@ -220,12 +222,75 @@ pub fn run_captured(
         } else {
             Stdio::inherit()
         })
-        .output()?;
+        .spawn()?;
+    // Drain both pipes concurrently: a full stderr pipe must never block
+    // a child whose stdout we are reading. No command execution timeout.
+    let stderr = child.stderr.take().map(|pipe| {
+        std::thread::spawn(move || {
+            capture_bounded(
+                pipe,
+                io::stderr().lock(),
+                crate::core::secure::MAX_INPUT_BYTES,
+            )
+        })
+    });
+    let stdout = capture_bounded(
+        child.stdout.take().expect("stdout piped"),
+        io::stdout().lock(),
+        crate::core::secure::MAX_INPUT_BYTES,
+    );
+    if stdout.is_err() {
+        let _ = child.kill();
+    }
+    let stderr = stderr
+        .map(|t| {
+            t.join()
+                .unwrap_or_else(|_| Err(io::Error::other("stderr reader panicked")))
+        })
+        .transpose();
+    if stderr.is_err() {
+        let _ = child.kill();
+    }
+    let status = child.wait()?;
+    let stdout = stdout?;
     Ok(CapturedRun {
-        stdout: output.stdout,
-        stderr: capture_stderr.then_some(output.stderr),
-        exit_code: output.status.code().unwrap_or(1),
+        stdout_streamed: stdout.is_none(),
+        stdout: stdout.unwrap_or_default(),
+        stderr: stderr?.flatten(),
+        exit_code: status.code().unwrap_or(1),
     })
+}
+
+/// Keep ordinary output available for the existing filters. Once a stream
+/// exceeds the budget, forward the buffered prefix and all remaining bytes
+/// without filtering, extra newlines, or a second execution of the command.
+fn capture_bounded(
+    mut reader: impl Read,
+    mut passthrough: impl Write,
+    limit: usize,
+) -> io::Result<Option<Vec<u8>>> {
+    let mut captured = Some(Vec::new());
+    let mut chunk = [0; 16 * 1024];
+    loop {
+        let n = match reader.read(&mut chunk) {
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            other => other?,
+        };
+        if n == 0 {
+            break;
+        }
+        if let Some(buf) = captured.as_mut() {
+            if n <= limit.saturating_sub(buf.len()) {
+                buf.extend_from_slice(&chunk[..n]);
+                continue;
+            }
+            passthrough.write_all(buf)?;
+            captured = None;
+        }
+        passthrough.write_all(&chunk[..n])?;
+        passthrough.flush()?;
+    }
+    Ok(captured)
 }
 
 /// Interactive (TTY) path: replaces the current process with the real
@@ -251,6 +316,38 @@ mod tests {
 
     fn with_vars(vars: &'static [&'static str]) -> impl Fn(&str) -> bool {
         move |name| vars.contains(&name)
+    }
+
+    #[test]
+    fn bounded_capture_preserves_small_and_oversized_bytes() {
+        for input in [
+            b"".as_slice(),
+            b"12345678",
+            b"123456789",
+            b"\xff\x00untrusted\n",
+        ] {
+            let mut forwarded = Vec::new();
+            let captured = capture_bounded(input, &mut forwarded, 8).unwrap();
+            if input.len() <= 8 {
+                assert_eq!(captured.unwrap(), input);
+                assert!(forwarded.is_empty());
+            } else {
+                assert!(captured.is_none());
+                assert_eq!(forwarded, input);
+            }
+        }
+    }
+
+    #[test]
+    fn bounded_capture_forwards_prefix_and_later_chunks_once() {
+        let input = vec![b'x'; 100_000];
+        let mut forwarded = Vec::new();
+        assert!(
+            capture_bounded(input.as_slice(), &mut forwarded, 20_000)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(forwarded, input);
     }
 
     #[test]

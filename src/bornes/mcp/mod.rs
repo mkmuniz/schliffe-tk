@@ -3,8 +3,9 @@ mod schema;
 
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::process::{Command, ExitCode, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -14,9 +15,9 @@ use std::thread;
 /// (Claude Code, this process's real stdin/stdout) and the real MCP server
 /// (a child process spawned here).
 ///
-/// Two threads: one reads the client's stdin and forwards it (intercepting
-/// along the way) to the server's stdin; the main one reads the server's
-/// stdout and forwards it (intercepting along the way) to the real stdout.
+/// The client thread and main server-reader thread each enforce a per-message
+/// limit, then forward directly: no queue or total session byte budget.
+/// Shared child ownership lets either direction terminate a malformed stream.
 /// Shared state (`ProxyState`) tracks which method each pending request
 /// `id` represents — a JSON-RPC response doesn't repeat the method, only
 /// the `id` (specs §6.1: the only way to decide what to transform in a
@@ -62,51 +63,49 @@ pub fn run(server_cmd: &str, server_args: &[String], lazy_schemas: bool) -> Exit
     let child_stdout = child.stdout.take().expect("stdout piped on spawn");
     let state = Arc::new(ProxyState::default());
 
-    let state_up = state.clone();
-    let child_stdin_up = child_stdin.clone();
-    let upstream = thread::spawn(move || {
+    let child = Arc::new(Mutex::new(child));
+    let protocol_error = Arc::new(AtomicBool::new(false));
+    let client_child = child.clone();
+    let client_error = protocol_error.clone();
+    let client_state = state.clone();
+    thread::spawn(move || {
         let stdin = std::io::stdin();
-        for line in stdin.lock().lines() {
-            let Ok(line) = line else { break };
-            if line.trim().is_empty() {
-                continue;
+        let mut reader = stdin.lock();
+        loop {
+            match read_frame(&mut reader, crate::core::secure::MAX_INPUT_BYTES) {
+                Ok(Some(line)) if !line.trim().is_empty() => {
+                    handle_client_message(&line, &client_state, &child_stdin, lazy_schemas);
+                }
+                Ok(Some(_)) => {}
+                // Drop the child's stdin on client EOF. Do not time out a
+                // legitimate tool that is still working on its response.
+                Ok(None) => break,
+                Err(e) => {
+                    eprintln!("schliffe: MCP client protocol read failed: {e}");
+                    client_error.store(true, Ordering::Relaxed);
+                    // Wake the server reader even if the peer never replies.
+                    let _ = client_child.lock().unwrap().kill();
+                    break;
+                }
             }
-            handle_client_message(&line, &state_up, &child_stdin_up, lazy_schemas);
         }
-        // `child_stdin_up` gets dropped here, at the end of the closure.
     });
-
-    // Real bug found testing live (2026-07-26) with the fake MCP server:
-    // `child_stdin` (this scope) and `child_stdin_up` (the thread above) are
-    // two copies of the same `Arc` — the child process's stdin pipe only
-    // truly closes once the LAST copy is dropped. Without this explicit
-    // `drop`, this copy would survive until `run()` returns, which would
-    // only happen AFTER `child.wait()` — but the real server (reading stdin
-    // until EOF) never gets that EOF while the pipe stays open, so it never
-    // exits on its own, and `child.wait()` hangs forever. Needs to be
-    // dropped here, before the read loop below — from this point on, only
-    // the thread's copy matters, and it drops when the CLIENT's stdin closes.
-    drop(child_stdin);
-
-    // Bounded (2026-09-28 hardening): the server on the other end is a
-    // third-party process. `lines()` would grow a single line without
-    // limit, so a hostile or broken server could exhaust memory just by
-    // never sending a newline. Past the cap the proxy stops forwarding —
-    // pending requests then get the "server exited" error below.
-    let reader = BufReader::new(child_stdout.take(crate::core::secure::MAX_INPUT_BYTES as u64));
-    for line in reader.lines() {
-        let Ok(line) = line else { break };
-        if line.trim().is_empty() {
-            continue;
+    let mut reader = BufReader::new(child_stdout);
+    loop {
+        match read_frame(&mut reader, crate::core::secure::MAX_INPUT_BYTES) {
+            Ok(Some(line)) if !line.trim().is_empty() => handle_server_message(&line, &state),
+            Ok(Some(_)) => {}
+            Ok(None) => break,
+            Err(e) => {
+                eprintln!("schliffe: MCP server protocol read failed: {e}");
+                protocol_error.store(true, Ordering::Relaxed);
+                break;
+            }
         }
-        handle_server_message(&line, &state);
     }
-
-    // The server's stdout closed: either a normal shutdown (the client
-    // closed stdin first) or the server died. Any request still pending
-    // would otherwise wait forever — answer each with a JSON-RPC error
-    // (validated 2026-09-24 with a server that exits mid-call).
-    let status = child.wait();
+    drop(reader);
+    // Send errors BEFORE waiting: stdout EOF is not proof that the child
+    // exited. A server can close stdout and stay alive indefinitely.
     let orphaned: Vec<String> = state
         .pending
         .lock()
@@ -119,20 +118,71 @@ pub fn run(server_cmd: &str, server_args: &[String], lazy_schemas: bool) -> Exit
         write_value_to_client(&json!({
             "jsonrpc": "2.0",
             "id": id,
-            "error": { "code": -32000, "message": "MCP server exited before responding (schliffe proxy)" },
+            "error": { "code": -32000, "message": "MCP server disconnected or protocol limit exceeded (schliffe proxy)" },
         }));
     }
+    if protocol_error.load(Ordering::Relaxed) {
+        let _ = child.lock().unwrap().kill();
+    }
+    // A grace period applies only AFTER disconnection, never to an active
+    // request. Reap a child that refuses to exit after closing its output.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    loop {
+        let status = child.lock().unwrap().try_wait();
+        match status {
+            Ok(Some(status)) => {
+                return if protocol_error.load(Ordering::Relaxed) {
+                    ExitCode::FAILURE
+                } else {
+                    ExitCode::from(status.code().unwrap_or(1) as u8)
+                };
+            }
+            Ok(None) if std::time::Instant::now() < deadline => {
+                thread::sleep(std::time::Duration::from_millis(1));
+            }
+            _ => {
+                let mut child = child.lock().unwrap();
+                let _ = child.kill();
+                let _ = child.wait();
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+}
 
-    // Only wait for the client->server thread on a normal shutdown: if the
-    // server died while the client is still connected, that thread is
-    // blocked reading the client's stdin and returning from here ends it.
-    if upstream.is_finished() {
-        let _ = upstream.join();
+/// Limit each newline-delimited message, not the lifetime of the session.
+/// Never parse or forward a truncated JSON message. The delimiter does not
+/// count against the payload budget; a final unterminated frame is accepted.
+fn read_frame(reader: &mut impl BufRead, limit: usize) -> io::Result<Option<String>> {
+    let mut frame = Vec::new();
+    loop {
+        let available = match reader.fill_buf() {
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            other => other?,
+        };
+        if available.is_empty() {
+            if frame.is_empty() {
+                return Ok(None);
+            }
+            break;
+        }
+        let newline = available.iter().position(|&b| b == b'\n');
+        let len = newline.unwrap_or(available.len());
+        if len > limit.saturating_sub(frame.len()) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "MCP message exceeds 64 MiB limit",
+            ));
+        }
+        frame.extend_from_slice(&available[..len]);
+        reader.consume(len + usize::from(newline.is_some()));
+        if newline.is_some() {
+            break;
+        }
     }
-    match status {
-        Ok(status) => ExitCode::from(status.code().unwrap_or(1) as u8),
-        Err(_) => ExitCode::FAILURE,
-    }
+    String::from_utf8(frame)
+        .map(Some)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 fn id_key(id: &Value) -> String {
@@ -192,7 +242,17 @@ fn handle_client_message(
             None => None,
         };
         if let Some(kind) = kind {
-            state.pending.lock().unwrap().insert(id_key(id), kind);
+            let mut pending = state.pending.lock().unwrap();
+            let key = id_key(id);
+            if pending.contains_key(&key) || pending.len() >= 1024 {
+                drop(pending);
+                write_value_to_client(&json!({
+                    "jsonrpc": "2.0", "id": id,
+                    "error": { "code": -32000, "message": "Duplicate request ID or too many pending requests (schliffe proxy)" }
+                }));
+                return;
+            }
+            pending.insert(key, kind);
         }
     }
 
@@ -264,4 +324,40 @@ fn handle_server_message(line: &str, state: &Arc<ProxyState>) {
         .unwrap_or(line.len());
     crate::core::stats::record(&key, line.len(), after);
     write_value_to_client(&out);
+}
+
+#[cfg(test)]
+mod framing_tests {
+    use super::*;
+
+    #[test]
+    fn frame_budget_resets_between_messages() {
+        let mut reader = io::Cursor::new(b"1234\n5678\nlast");
+        for expected in ["1234", "5678", "last"] {
+            assert_eq!(
+                read_frame(&mut reader, 4).unwrap().as_deref(),
+                Some(expected)
+            );
+        }
+        assert!(read_frame(&mut reader, 4).unwrap().is_none());
+    }
+
+    #[test]
+    fn refuses_oversized_and_invalid_utf8_frames() {
+        for bytes in [b"12345\n".as_slice(), b"12345", b"\xff\n"] {
+            let mut reader = BufReader::with_capacity(2, bytes);
+            assert_eq!(
+                read_frame(&mut reader, 4).unwrap_err().kind(),
+                io::ErrorKind::InvalidData
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_empty_crlf_and_split_unicode_frames() {
+        let mut reader = BufReader::with_capacity(1, "\n€\r\n".as_bytes());
+        assert_eq!(read_frame(&mut reader, 4).unwrap().as_deref(), Some(""));
+        assert_eq!(read_frame(&mut reader, 4).unwrap().as_deref(), Some("€\r"));
+        assert!(read_frame(&mut reader, 4).unwrap().is_none());
+    }
 }

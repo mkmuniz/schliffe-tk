@@ -58,7 +58,13 @@ jobs:
             relative_path_entries_are_never_used \
             decompression_bomb_is_refused \
             show_refuses_anything_that_is_not_a_store_hash \
-            everything_written_is_owner_only
+            everything_written_is_owner_only \
+            oversized_captured_streams_pass_through_exactly_and_keep_exit_code \
+            mcp_session_can_exceed_64_mib_with_small_frames \
+            mcp_oversized_client_frame_stops_the_server \
+            mcp_oversized_server_frame_is_not_forwarded_or_allowed_to_hang \
+            mcp_stdout_eof_does_not_wait_forever_for_child_exit \
+            mcp_client_eof_allows_a_slow_valid_response
           do
             echo "== $t"
             out=$(cargo test --locked "$t" 2>&1)

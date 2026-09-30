@@ -201,6 +201,11 @@ pub fn run(invoked_name: &str, rest_args: &[String]) -> ExitCode {
         }
     }
 
+    if captured.stdout_streamed {
+        stats::record_passthrough(&stats::command_key(invoked_name, rest_args));
+        return ExitCode::from(captured.exit_code as u8);
+    }
+
     // Cache (§8.2): only writes after confirming success — never caches a
     // process that failed or was interrupted (business rule 2/3).
     if let Some(key) = &git_show_cache_key

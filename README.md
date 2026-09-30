@@ -136,7 +136,7 @@ In real sessions most tokens are the conversation itself, re-read on every turn 
 | Long conversations | A one-time notice at 200k / 400k / 600k / 800k tokens of context | Claude Code hook |
 | Commit messages | Body of `git log` / `git show` summarized to one sentence | TF-IDF, no model |
 
-Commands without a rule (`ls`, `curl`, `make`...) run untouched, streaming live.
+Commands without a rule (`ls`, `curl`, `make`...) run untouched, streaming live. For filtered commands, each captured stream has a 64 MiB buffer limit. Above it, the buffered prefix and remaining bytes pass through raw, preserving the exit code; that stream is not compressed or cached.
 
 ## Pasted logs and long conversations
 
@@ -214,7 +214,8 @@ claude mcp add filesystem -- schliffe mcp --keep-schemas -- npx -y @modelcontext
 
 - `--keep-schemas` leaves the tool list untouched (recommended for Claude Code, which already loads schemas on demand). Without it, `tools/list` is shrunk and a `get_tool_schema` tool is added.
 - Only JSON results are compressed. Tools that read files (`read`, `file`, `cat`, `open`, `download`...) are never touched.
-- If the server dies mid-call, pending requests get an error instead of hanging.
+- If the server disconnects mid-call, pending requests get an error instead of waiting for the process to exit.
+- Each MCP message is limited to 64 MiB in either direction; oversized messages close the connection. Sessions can exceed 64 MiB in total, and valid tool calls have no execution timeout.
 
 Remote servers (like Figma) don't need this — the hook covers them.
 

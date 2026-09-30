@@ -588,3 +588,191 @@ fn everything_written_is_owner_only() {
     }
     assert!(checked > 0, "nothing was written, so nothing was checked");
 }
+
+/// Drain pipes concurrently and fail promptly if a proxy lifecycle regresses.
+fn run_with_deadline(mut cmd: Command, input: Vec<u8>) -> Output {
+    use std::io::{Read, Write};
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let writer = std::thread::spawn(move || {
+        let _ = stdin.write_all(&input);
+    });
+    let mut stdout = child.stdout.take().unwrap();
+    let out = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        stdout.read_to_end(&mut buf).unwrap();
+        buf
+    });
+    let mut stderr = child.stderr.take().unwrap();
+    let err = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        stderr.read_to_end(&mut buf).unwrap();
+        buf
+    });
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("process hung beyond test deadline");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    writer.join().unwrap();
+    Output {
+        status,
+        stdout: out.join().unwrap(),
+        stderr: err.join().unwrap(),
+    }
+}
+
+fn mcp_command(sb: &Sandbox, script: &str) -> Command {
+    let mut cmd = Command::new(BIN);
+    cmd.args(["mcp", "--keep-schemas", "--", "/bin/sh", "-c", script])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", &sb.root)
+        .env("SCHLIFFE_NO_STATS", "1");
+    cmd
+}
+
+#[test]
+fn mcp_session_can_exceed_64_mib_with_small_frames() {
+    let sb = Sandbox::new();
+    // Valid notifications, each comfortably below the per-message budget.
+    let script = r#"i=0
+while [ "$i" -lt 65 ]; do
+    printf '{"jsonrpc":"2.0","method":"notice","params":"'
+    head -c 1048576 /dev/zero | tr '\000' x
+    printf '"}\n'
+    i=$((i + 1))
+done
+printf '{"jsonrpc":"2.0","method":"finished"}\n'
+"#;
+    let out = run_with_deadline(mcp_command(&sb, script), Vec::new());
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(out.stdout.len() > 64 * 1024 * 1024);
+    let text = stdout(&out);
+    assert_eq!(text.lines().count(), 66);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(text.lines().last().unwrap()).unwrap()["method"],
+        "finished"
+    );
+}
+
+#[test]
+fn mcp_oversized_server_frame_is_not_forwarded_or_allowed_to_hang() {
+    let sb = Sandbox::new();
+    let script = "read request\nhead -c 67108865 /dev/zero | tr '\\000' x\nexec sleep 30";
+    let out = run_with_deadline(
+        mcp_command(&sb, script),
+        b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n".to_vec(),
+    );
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("limit"));
+    let response: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(response["id"], 1);
+    assert!(response.get("error").is_some());
+}
+
+#[test]
+fn mcp_oversized_client_frame_stops_the_server() {
+    let sb = Sandbox::new();
+    let out = run_with_deadline(
+        mcp_command(&sb, "exec sleep 30"),
+        vec![b'x'; 64 * 1024 * 1024 + 1],
+    );
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("limit"));
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn mcp_stdout_eof_does_not_wait_forever_for_child_exit() {
+    let sb = Sandbox::new();
+    let out = run_with_deadline(
+        mcp_command(&sb, "read request\nexec 1>&-\nexec sleep 30"),
+        b"{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"}\n".to_vec(),
+    );
+    assert!(!out.status.success());
+    let response: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(response["id"], 7);
+    assert!(response.get("error").is_some());
+}
+
+#[test]
+fn mcp_client_eof_allows_a_slow_valid_response() {
+    let sb = Sandbox::new();
+    let out = run_with_deadline(
+        mcp_command(
+            &sb,
+            "read request\nsleep 2\nprintf '{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{}}\\n'",
+        ),
+        b"{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"}\n".to_vec(),
+    );
+    assert!(out.status.success());
+    let response: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(response.get("result").is_some());
+    assert!(response.get("error").is_none());
+}
+
+#[test]
+fn oversized_captured_streams_pass_through_exactly_and_keep_exit_code() {
+    let sb = Sandbox::new();
+    sb.shim("npm");
+    let script = "#!/bin/sh\nhead -c 67108865 /dev/zero\nhead -c 67108865 /dev/zero >&2\nexit 23\n";
+    let real = sb.root.join("real/npm");
+    fs::write(&real, script).unwrap();
+    fs::set_permissions(&real, fs::Permissions::from_mode(0o755)).unwrap();
+    let mut cmd = Command::new(sb.shims().join("npm"));
+    cmd.arg("install")
+        .env_clear()
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", sb.root.join("real").display()),
+        )
+        .env("HOME", &sb.root)
+        .env("SCHLIFFE_FORCE", "1")
+        .env("SCHLIFFE_NO_STATS", "1");
+    let out = run_with_deadline(cmd, Vec::new());
+    assert_eq!(out.status.code(), Some(23));
+    for stream in [&out.stdout, &out.stderr] {
+        assert_eq!(stream.len(), 64 * 1024 * 1024 + 1);
+        assert!(stream.iter().all(|&b| b == 0));
+    }
+}
+
+#[test]
+fn mcp_pending_request_limit_rejects_excess_without_forwarding_it() {
+    let sb = Sandbox::new();
+    let input: String = (0..1025)
+        .map(|id| format!("{{\"jsonrpc\":\"2.0\",\"id\":{id},\"method\":\"ping\"}}\n"))
+        .collect();
+    let script =
+        "n=0\nwhile IFS= read -r request; do n=$((n + 1)); done\nprintf '%s\\n' \"$n\" >&2";
+    let out = run_with_deadline(mcp_command(&sb, script), input.into_bytes());
+    assert_eq!(stderr(&out).trim(), "1024");
+    let text = stdout(&out);
+    let replies: Vec<serde_json::Value> = text
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(replies.len(), 1025);
+    let rejected = replies.iter().find(|r| r["id"] == 1024).unwrap();
+    assert!(
+        rejected["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("too many pending")
+    );
+}
