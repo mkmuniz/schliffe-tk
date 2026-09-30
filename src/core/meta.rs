@@ -13,6 +13,25 @@ pub fn run(args: &[String]) -> ExitCode {
     // meta-commands because it has variable arity (everything after "--"
     // belongs to the real server, not to Schliffe).
     if args.first().map(String::as_str) == Some("mcp") {
+        let options: Vec<&String> = args
+            .iter()
+            .skip(1)
+            .take_while(|a| a.as_str() != "--")
+            .collect();
+        if let Some(url) = options
+            .windows(2)
+            .find(|pair| pair[0] == "--url")
+            .map(|pair| pair[1].clone())
+        {
+            let headers = options
+                .windows(2)
+                .filter(|pair| pair[0] == "--header")
+                .filter_map(|pair| pair[1].split_once('='))
+                .map(|(name, value)| (name.to_string(), value.to_string()))
+                .collect();
+            let lazy_schemas = !options.iter().any(|a| *a == "--keep-schemas");
+            return bornes::mcp::run_http(&url, headers, lazy_schemas);
+        }
         let after_sep = args
             .iter()
             .skip(1)
@@ -29,7 +48,7 @@ pub fn run(args: &[String]) -> ExitCode {
             Some((cmd, rest)) => bornes::mcp::run(cmd, rest, lazy_schemas),
             None => {
                 eprintln!(
-                    "usage: schliffe mcp [--keep-schemas] -- <real MCP server command> [args...]"
+                    "usage: schliffe mcp [--keep-schemas] -- <real MCP server command> [args...]\n       schliffe mcp --url <https://server/mcp> [--header Name=Value]"
                 );
                 ExitCode::FAILURE
             }

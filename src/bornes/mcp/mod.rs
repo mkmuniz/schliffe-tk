@@ -3,11 +3,161 @@ mod schema;
 
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::{Command, ExitCode, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+
+/// Remote MCP entry point. The stdio proxy remains unchanged; this path uses
+/// MCP Streamable HTTP POST requests and reuses its schema/result transforms.
+/// Authentication is deliberately limited to explicit headers in this first
+/// stage. OAuth is added separately so token storage and renewal get their own
+/// security review.
+pub fn run_http(url: &str, headers: Vec<(String, String)>, lazy_schemas: bool) -> ExitCode {
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        eprintln!("schliffe: MCP HTTP URL must use http:// or https://");
+        return ExitCode::FAILURE;
+    }
+    let client = match reqwest::blocking::Client::builder().build() {
+        Ok(client) => client,
+        Err(e) => {
+            eprintln!("schliffe: failed to create MCP HTTP client: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let state = Arc::new(ProxyState::default());
+    let mut session_id = None::<String>;
+    let stdin = std::io::stdin();
+    let mut reader = stdin.lock();
+
+    loop {
+        let line = match read_frame(&mut reader, crate::core::secure::MAX_INPUT_BYTES) {
+            Ok(Some(line)) if !line.trim().is_empty() => line,
+            Ok(Some(_)) => continue,
+            Ok(None) => return ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("schliffe: MCP HTTP request read failed: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let Ok(msg) = serde_json::from_str::<Value>(&line) else {
+            eprintln!("schliffe: MCP HTTP request was not valid JSON");
+            return ExitCode::FAILURE;
+        };
+        let method = msg.get("method").and_then(Value::as_str);
+        let id = msg.get("id").cloned();
+
+        if lazy_schemas
+            && method == Some("tools/call")
+            && msg.pointer("/params/name").and_then(Value::as_str) == Some("get_tool_schema")
+        {
+            respond_get_tool_schema(&msg, id, &state);
+            continue;
+        }
+
+        if let Some(id) = &id {
+            let kind = match method {
+                Some("tools/list") if lazy_schemas => Some(PendingKind::ToolsList),
+                Some("tools/call") => Some(PendingKind::ToolsCall(
+                    msg.pointer("/params/name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                )),
+                Some(_) => Some(PendingKind::Other),
+                None => None,
+            };
+            if let Some(kind) = kind {
+                let mut pending = state.pending.lock().unwrap();
+                let key = id_key(id);
+                if pending.contains_key(&key) || pending.len() >= 1024 {
+                    write_value_to_client(&json!({
+                        "jsonrpc": "2.0", "id": id,
+                        "error": {"code": -32000, "message": "Duplicate request ID or too many pending requests (schliffe proxy)"}
+                    }));
+                    continue;
+                }
+                pending.insert(key, kind);
+            }
+        }
+
+        let mut request = client
+            .post(url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .body(line.clone());
+        if let Some(id) = &session_id {
+            request = request.header("Mcp-Session-Id", id);
+        }
+        for (name, value) in &headers {
+            request = request.header(name, expand_header_value(value));
+        }
+        let response = match request.send() {
+            Ok(response) => response,
+            Err(e) => {
+                eprintln!("schliffe: MCP HTTP request failed: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        if let Some(id) = response.headers().get("Mcp-Session-Id")
+            && let Ok(id) = id.to_str()
+        {
+            session_id = Some(id.to_string());
+        }
+        let status = response.status();
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        let body = match read_http_body(response) {
+            Ok(body) => body,
+            Err(e) => {
+                eprintln!("schliffe: failed to read MCP HTTP response: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        if status.as_u16() == 202 || body.trim().is_empty() {
+            continue;
+        }
+        let messages = if content_type.starts_with("text/event-stream") {
+            body.lines()
+                .filter_map(|line| line.strip_prefix("data:"))
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        } else {
+            vec![body]
+        };
+        for message in messages {
+            handle_server_message(&message, &state);
+        }
+    }
+}
+
+fn read_http_body(response: reqwest::blocking::Response) -> io::Result<String> {
+    let mut bytes = Vec::new();
+    response
+        .take(crate::core::secure::MAX_INPUT_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > crate::core::secure::MAX_INPUT_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "MCP HTTP response exceeds 64 MiB limit",
+        ));
+    }
+    String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+
+fn expand_header_value(value: &str) -> String {
+    let Some(name) = value.strip_prefix("${").and_then(|v| v.strip_suffix('}')) else {
+        return value.to_string();
+    };
+    std::env::var(name).unwrap_or_default()
+}
 
 /// `bornes/mcp` (specs.md §6) — JSON-RPC protocol proxy over stdio. Unlike
 /// `bornes/comandos`'s shim (a short-lived, one-shot process), this process

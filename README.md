@@ -219,6 +219,22 @@ claude mcp add filesystem -- schliffe mcp --keep-schemas -- npx -y @modelcontext
 
 Remote servers (like Figma) don't need this — the hook covers them.
 
+### Remote MCP servers (HTTP)
+
+The same proxy can connect to a remote Streamable HTTP server. The local
+stdio mode above remains available:
+
+```bash
+schliffe mcp --url https://mcp.example.com/mcp \\
+  --header 'Authorization=Bearer ${MCP_TOKEN}'
+```
+
+The URL mode reuses schema lazy-loading, result compression, recovery storage,
+and the 64 MiB response limit. Header values may reference an environment
+variable with `${NAME}`; Schliffe does not print the resolved value. OAuth
+browser login and token storage are planned for the next stage. Until then,
+use a short-lived token through an environment variable.
+
 ## How it works
 
 ```mermaid

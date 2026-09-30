@@ -776,3 +776,83 @@ fn mcp_pending_request_limit_rejects_excess_without_forwarding_it() {
             .contains("too many pending")
     );
 }
+
+#[test]
+fn mcp_http_reuses_schema_and_result_compression() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let sb = Sandbox::new();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        for request_number in 0..2 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut chunk = [0; 4096];
+            loop {
+                let n = stream.read(&mut chunk).unwrap();
+                request.extend_from_slice(&chunk[..n]);
+                if request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let header_end = request.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+            let headers = String::from_utf8_lossy(&request[..header_end]);
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    line.to_ascii_lowercase()
+                        .strip_prefix("content-length:")?
+                        .trim()
+                        .parse::<usize>()
+                        .ok()
+                })
+                .unwrap_or(0);
+            while request.len() < header_end + content_length {
+                let n = stream.read(&mut chunk).unwrap();
+                request.extend_from_slice(&chunk[..n]);
+            }
+            let body = if request_number == 0 {
+                serde_json::json!({
+                    "jsonrpc": "2.0", "id": 1,
+                    "result": {"tools": [
+                        {"name":"search","description":format!("Searches documents. {}", "Supports pagination and filters. ".repeat(30)),"inputSchema":{"type":"object","properties":{"query":{"type":"string"},"category":{"type":"string"},"limit":{"type":"integer"}}}},
+                        {"name":"update","description":format!("Updates a document. {}", "Requires confirmation and a document id. ".repeat(30)),"inputSchema":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"}}}}
+                    ]}
+                })
+            } else {
+                serde_json::json!({
+                    "jsonrpc": "2.0", "id": 2,
+                    "result": {"content": [{"type":"text","text":serde_json::json!({"items":[null,null,null,null,null,null,null,null,null,null,"eleven","twelve"],"message":"x".repeat(400)}).to_string()}]}
+                })
+            };
+            let body = body.to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nMcp-Session-Id: e2e\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(), body
+            )
+            .unwrap();
+        }
+    });
+
+    let mut command = Command::new(BIN);
+    command
+        .args(["mcp", "--url", &format!("http://{address}")])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", &sb.root)
+        .env("SCHLIFFE_NO_STATS", "1");
+    let input = b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}\n".to_vec();
+    let out = run_with_deadline(command, input);
+    server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    let lines: Vec<_> = stdout(&out)
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0]["result"]["tools"].as_array().unwrap().len(), 3);
+    assert!(stdout(&out).len() < 2_000);
+}
