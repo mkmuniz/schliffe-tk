@@ -15,8 +15,8 @@ Schliffe is not a library that processes data at arm's length. It installs itsel
 
 These are design constraints, enforced by tests and by `deny.toml`:
 
-- **No network.** The binary opens no sockets. Network-capable crates (`reqwest`, `hyper`, `ureq`, `curl`, …) are banned from the dependency graph; only `install.sh` downloads, using the system `curl`.
-- **No telemetry.** Nothing is sent anywhere. `schliffe stats` and `schliffe report` read local files and print to your terminal.
+- **Network access is narrow and explicit.** The binary can connect to a user-selected MCP HTTP(S) endpoint when `schliffe mcp --url` is used. The remote path uses `reqwest` with Rustls, accepts only HTTP(S) URLs, applies bounded response reads, and never downloads or executes code. The installer is the only other component that performs network downloads.
+- **No telemetry.** Nothing is sent to Schliffe or a third-party analytics service. MCP traffic is sent only to the endpoint explicitly configured by the user. `schliffe stats` and `schliffe report` read local files and print to your terminal.
 - **No code execution from configuration.** Layer B filters are declarative TOML with a fixed action catalogue; there is no scripting engine, and embedding one is banned.
 - **No dynamic loading.** No plugin `.so`/`.dylib` is loaded.
 - **No privilege escalation.** The installer never uses `sudo` and writes only under `$HOME`.

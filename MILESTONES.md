@@ -261,4 +261,18 @@ A full pass over the attack surface, driven by the fact that Schliffe runs in fr
 
 Found and fixed: arbitrary file read through `schliffe show` (path traversal, reachable via prompt injection because Schliffe's own recovery hints are text the model reads); code execution through a relative `$PATH` entry (a planted `./git` in an untrusted checkout ran); secrets written world-readable (the store holds raw command output); a symlink at a store destination being written through; a panic on a multi-byte argument; unbounded reads from hook stdin and from a hostile MCP server; and an image decompression bomb that was only refused by a dependency's default.
 
-Tooling added: `cargo audit` (0 advisories over 60 dependencies), `cargo deny` with a policy that bans network, scripting and dynamic-loading crates outright — Schliffe must never gain those capabilities — plus licence and registry allow-lists; `gitleaks`; and a check that every `unsafe` carries a `SAFETY:` comment (two sites, both reviewed). `SECURITY.md` documents the threat model, each fix, and the residual risks.
+Tooling added: `cargo audit` (0 advisories over 60 dependencies), `cargo deny` with a policy that bans unneeded network clients, scripting and dynamic-loading crates, while explicitly allowing the Rustls-based HTTP client required by remote MCP; licence and registry allow-lists; `gitleaks`; and a check that every `unsafe` carries a `SAFETY:` comment (two sites, both reviewed). `SECURITY.md` documents the threat model, each fix, and the residual risks.
+
+### M15 — OAuth for remote MCP
+
+- **Goal:** let a user connect to protected Streamable HTTP MCP servers without manually copying bearer tokens into command arguments.
+- **Requirements:** follow MCP OAuth discovery through Protected Resource Metadata and Authorization Server Metadata; use Authorization Code + PKCE S256; prefer Client ID Metadata Documents and retain Dynamic Client Registration only for compatible legacy servers; validate issuer, redirect URI, state and PKCE before accepting a callback; retry a request once after a successful authorization; support refresh-token renewal without printing tokens.
+- **Security requirements:** store tokens only under `~/.schliffe` with owner-only permissions and atomic writes; bind cached credentials to the exact server and issuer; never put tokens in URLs, logs, stats or recovery content; cap metadata and token responses; accept only HTTPS for remote OAuth endpoints except loopback development; fail closed on an invalid callback and fail open to the original HTTP error when authorization cannot complete.
+- **Tests:** local OAuth fixture covering discovery, PKCE mismatch, issuer mismatch, expired access token, refresh, token redaction and a successful retry. No real account or credential belongs in the repository.
+- **Done when:** a protected test MCP server can be connected through `schliffe mcp --oauth --url ...`, the token survives a restart securely, and `cargo deny`, `cargo audit`, `cargo clippy` and `cargo test` pass.
+
+### M16 — Complete Streamable HTTP lifecycle
+
+- **Goal:** support server-initiated messages and long-lived event streams without bypassing Schliffe's filtering or security limits.
+- **Requirements:** preserve request/response correlation, validate the MCP method headers when present, bound each event and the number of pending requests, forward client answers unchanged, and apply transformations only to known `tools/list` and `tools/call` responses.
+- **Done when:** a local HTTP fixture exercises notifications, server requests, SSE events, reconnect behavior and shutdown without hangs or semantic changes.
