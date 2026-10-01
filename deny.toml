@@ -16,15 +16,12 @@ ignore = []
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"       # no "*" version requirements
-# Crates that would give Schliffe capabilities it must not have. It is an
-# offline, local tool: it opens no sockets and runs no code it downloads.
-# (`install.sh` uses the system `curl`; the binary itself never does.)
+# Crates that would give Schliffe capabilities it must not have. The remote
+# MCP proxy is intentionally limited to HTTP transport through reqwest; it
+# does not download or execute code.
 deny = [
-    { name = "reqwest", reason = "Schliffe must not make network requests" },
-    { name = "hyper", reason = "Schliffe must not make network requests" },
     { name = "ureq", reason = "Schliffe must not make network requests" },
     { name = "curl", reason = "Schliffe must not make network requests" },
-    { name = "tokio", reason = "no async runtime is needed; large surface" },
     { name = "openssl", reason = "no TLS in the binary" },
     { name = "openssl-sys", reason = "no TLS in the binary" },
     { name = "git2", reason = "Schliffe shells out to the real git, on purpose" },
@@ -50,6 +47,7 @@ allow = [
     "CC0-1.0",
     "Unlicense",
     "BSL-1.0",
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.9
 
