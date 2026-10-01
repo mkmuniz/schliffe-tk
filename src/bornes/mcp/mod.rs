@@ -9,12 +9,33 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CompressionLevel {
+    Low,
+    #[default]
+    Medium,
+    High,
+    Max,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Options {
+    pub lazy_schemas: bool,
+    pub compression: CompressionLevel,
+    pub include_tools: Vec<String>,
+    pub exclude_tools: Vec<String>,
+}
+
 /// Remote MCP entry point. The stdio proxy remains unchanged; this path uses
 /// MCP Streamable HTTP POST requests and reuses its schema/result transforms.
 /// Authentication is deliberately limited to explicit headers in this first
 /// stage. OAuth is added separately so token storage and renewal get their own
 /// security review.
-pub fn run_http(url: &str, headers: Vec<(String, String)>, lazy_schemas: bool) -> ExitCode {
+pub fn run_http_with_options(
+    url: &str,
+    headers: Vec<(String, String)>,
+    options: Options,
+) -> ExitCode {
     if !url.starts_with("https://") && !url.starts_with("http://") {
         eprintln!("schliffe: MCP HTTP URL must use http:// or https://");
         return ExitCode::FAILURE;
@@ -48,7 +69,7 @@ pub fn run_http(url: &str, headers: Vec<(String, String)>, lazy_schemas: bool) -
         let method = msg.get("method").and_then(Value::as_str);
         let id = msg.get("id").cloned();
 
-        if lazy_schemas
+        if options.lazy_schemas
             && method == Some("tools/call")
             && msg.pointer("/params/name").and_then(Value::as_str) == Some("get_tool_schema")
         {
@@ -58,7 +79,13 @@ pub fn run_http(url: &str, headers: Vec<(String, String)>, lazy_schemas: bool) -
 
         if let Some(id) = &id {
             let kind = match method {
-                Some("tools/list") if lazy_schemas => Some(PendingKind::ToolsList),
+                Some("tools/list")
+                    if options.lazy_schemas
+                        || !options.include_tools.is_empty()
+                        || !options.exclude_tools.is_empty() =>
+                {
+                    Some(PendingKind::ToolsList)
+                }
                 Some("tools/call") => Some(PendingKind::ToolsCall(
                     msg.pointer("/params/name")
                         .and_then(Value::as_str)
@@ -133,7 +160,7 @@ pub fn run_http(url: &str, headers: Vec<(String, String)>, lazy_schemas: bool) -
             vec![body]
         };
         for message in messages {
-            handle_server_message(&message, &state);
+            handle_server_message(&message, &state, &options);
         }
     }
 }
@@ -192,7 +219,7 @@ struct ProxyState {
 /// defer tool schemas themselves (current Claude Code loads MCP schemas on
 /// demand via its own tool search, which also relies on the full
 /// descriptions this proxy would shorten).
-pub fn run(server_cmd: &str, server_args: &[String], lazy_schemas: bool) -> ExitCode {
+pub fn run_with_options(server_cmd: &str, server_args: &[String], options: Options) -> ExitCode {
     let mut child = match Command::new(server_cmd)
         .args(server_args)
         .stdin(Stdio::piped())
@@ -218,13 +245,14 @@ pub fn run(server_cmd: &str, server_args: &[String], lazy_schemas: bool) -> Exit
     let client_child = child.clone();
     let client_error = protocol_error.clone();
     let client_state = state.clone();
+    let client_options = options.clone();
     thread::spawn(move || {
         let stdin = std::io::stdin();
         let mut reader = stdin.lock();
         loop {
             match read_frame(&mut reader, crate::core::secure::MAX_INPUT_BYTES) {
                 Ok(Some(line)) if !line.trim().is_empty() => {
-                    handle_client_message(&line, &client_state, &child_stdin, lazy_schemas);
+                    handle_client_message(&line, &client_state, &child_stdin, &client_options);
                 }
                 Ok(Some(_)) => {}
                 // Drop the child's stdin on client EOF. Do not time out a
@@ -243,7 +271,9 @@ pub fn run(server_cmd: &str, server_args: &[String], lazy_schemas: bool) -> Exit
     let mut reader = BufReader::new(child_stdout);
     loop {
         match read_frame(&mut reader, crate::core::secure::MAX_INPUT_BYTES) {
-            Ok(Some(line)) if !line.trim().is_empty() => handle_server_message(&line, &state),
+            Ok(Some(line)) if !line.trim().is_empty() => {
+                handle_server_message(&line, &state, &options)
+            }
             Ok(Some(_)) => {}
             Ok(None) => break,
             Err(e) => {
@@ -359,7 +389,7 @@ fn handle_client_message(
     line: &str,
     state: &Arc<ProxyState>,
     child_stdin: &Arc<Mutex<std::process::ChildStdin>>,
-    lazy_schemas: bool,
+    options: &Options,
 ) {
     let Ok(msg) = serde_json::from_str::<Value>(line) else {
         write_raw_line(child_stdin, line); // fail-open (rule 3): didn't parse, forward as-is
@@ -371,7 +401,7 @@ fn handle_client_message(
 
     if method == Some("tools/call") {
         let tool_name = msg.pointer("/params/name").and_then(Value::as_str);
-        if lazy_schemas && tool_name == Some("get_tool_schema") {
+        if options.lazy_schemas && tool_name == Some("get_tool_schema") {
             respond_get_tool_schema(&msg, id, state);
             return; // local short-circuit — specs §6.1, step 2
         }
@@ -381,7 +411,13 @@ fn handle_client_message(
         // Only requests (with a method) — a message with an id but no
         // method is the client answering a server-initiated request.
         let kind = match method {
-            Some("tools/list") if lazy_schemas => Some(PendingKind::ToolsList),
+            Some("tools/list")
+                if options.lazy_schemas
+                    || !options.include_tools.is_empty()
+                    || !options.exclude_tools.is_empty() =>
+            {
+                Some(PendingKind::ToolsList)
+            }
             Some("tools/call") => Some(PendingKind::ToolsCall(
                 msg.pointer("/params/name")
                     .and_then(Value::as_str)
@@ -440,7 +476,7 @@ fn respond_get_tool_schema(msg: &Value, id: Option<Value>, state: &Arc<ProxyStat
 /// whose `id` matches a request we recorded as `tools/list`/`tools/call` —
 /// anything else (a notification, a request from the server itself, a
 /// response for a method with no special handling) passes straight through.
-fn handle_server_message(line: &str, state: &Arc<ProxyState>) {
+fn handle_server_message(line: &str, state: &Arc<ProxyState>, options: &Options) {
     let Ok(msg) = serde_json::from_str::<Value>(line) else {
         println!("{line}");
         let _ = std::io::stdout().flush();
@@ -457,7 +493,7 @@ fn handle_server_message(line: &str, state: &Arc<ProxyState>) {
 
     let (out, key) = match kind {
         Some(PendingKind::ToolsList) => (
-            schema::transform_tools_list(&msg, &state.schemas),
+            schema::transform_tools_list_with_options(&msg, &state.schemas, options),
             "mcp tools/list".to_string(),
         ),
         Some(PendingKind::ToolsCall(tool)) => (
