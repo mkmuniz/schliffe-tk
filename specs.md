@@ -271,9 +271,10 @@ schema/result transformations as the stdio path. `http://` is allowed for
 local development; production credentials should use `https://`.
 
 This stage supports explicit headers, including environment-variable values.
-OAuth discovery, browser authorization, secure token storage, renewal, and
-legacy SSE fallback remain a separate stage because they change the
-credential and connection lifecycle.
+With `--oauth`, protected servers can use OAuth discovery, browser
+authorization with PKCE, secure token storage and refresh-token renewal.
+Legacy SSE fallback and server-initiated HTTP streams remain separate because
+they change the connection lifecycle.
 
 **Finding that validates this decision**: we looked into whether the `PostToolUse.updatedToolOutput` hook would solve this more simply, without a proxy. It can't — it's restricted to MCP tools by design, and even then it never fires on Windows+VSCode (section 2). Since `bornes/mcp` is a real proxy (it natively sees the call and the result, directly in the protocol), that hook limitation doesn't affect it — only MCP tools are covered; Claude Code's native tools (WebFetch, WebSearch) remain out of reach, with no known workaround, unless the user swaps the native tool for an equivalent MCP server.
 

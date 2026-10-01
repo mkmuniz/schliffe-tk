@@ -1,4 +1,5 @@
 pub mod compress;
+mod oauth;
 mod schema;
 
 use serde_json::{Value, json};
@@ -24,13 +25,13 @@ pub struct Options {
     pub compression: CompressionLevel,
     pub include_tools: Vec<String>,
     pub exclude_tools: Vec<String>,
+    pub oauth: bool,
 }
 
 /// Remote MCP entry point. The stdio proxy remains unchanged; this path uses
 /// MCP Streamable HTTP POST requests and reuses its schema/result transforms.
-/// Authentication is deliberately limited to explicit headers in this first
-/// stage. OAuth is added separately so token storage and renewal get their own
-/// security review.
+/// Authentication accepts explicit headers and, when `--oauth` is enabled,
+/// performs the MCP OAuth flow after a protected resource returns 401.
 pub fn run_http_with_options(
     url: &str,
     headers: Vec<(String, String)>,
@@ -49,6 +50,7 @@ pub fn run_http_with_options(
     };
     let state = Arc::new(ProxyState::default());
     let mut session_id = None::<String>;
+    let mut oauth_token = None::<String>;
     let stdin = std::io::stdin();
     let mut reader = stdin.lock();
 
@@ -109,24 +111,50 @@ pub fn run_http_with_options(
             }
         }
 
-        let mut request = client
-            .post(url)
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json, text/event-stream")
-            .body(line.clone());
-        if let Some(id) = &session_id {
-            request = request.header("Mcp-Session-Id", id);
-        }
-        for (name, value) in &headers {
-            request = request.header(name, expand_header_value(value));
-        }
-        let response = match request.send() {
+        let mut response = match send_http_request(
+            &client,
+            url,
+            &line,
+            session_id.as_deref(),
+            &headers,
+            oauth_token.as_deref(),
+        ) {
             Ok(response) => response,
             Err(e) => {
                 eprintln!("schliffe: MCP HTTP request failed: {e}");
                 return ExitCode::FAILURE;
             }
         };
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED && options.oauth {
+            let challenge = response
+                .headers()
+                .get(reqwest::header::WWW_AUTHENTICATE)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned);
+            match oauth::authorize(&client, url, challenge.as_deref()) {
+                Ok(tokens) => {
+                    oauth_token = Some(tokens.access_token);
+                    response = match send_http_request(
+                        &client,
+                        url,
+                        &line,
+                        session_id.as_deref(),
+                        &headers,
+                        oauth_token.as_deref(),
+                    ) {
+                        Ok(response) => response,
+                        Err(e) => {
+                            eprintln!("schliffe: authenticated MCP request failed: {e}");
+                            return ExitCode::FAILURE;
+                        }
+                    };
+                }
+                Err(e) => {
+                    eprintln!("schliffe: MCP OAuth authorization failed: {e}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
         if let Some(id) = response.headers().get("Mcp-Session-Id")
             && let Ok(id) = id.to_str()
         {
@@ -163,6 +191,31 @@ pub fn run_http_with_options(
             handle_server_message(&message, &state, &options);
         }
     }
+}
+
+fn send_http_request(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    body: &str,
+    session_id: Option<&str>,
+    headers: &[(String, String)],
+    oauth_token: Option<&str>,
+) -> Result<reqwest::blocking::Response, reqwest::Error> {
+    let mut request = client
+        .post(url)
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .body(body.to_owned());
+    if let Some(id) = session_id {
+        request = request.header("Mcp-Session-Id", id);
+    }
+    for (name, value) in headers {
+        request = request.header(name, expand_header_value(value));
+    }
+    if let Some(token) = oauth_token {
+        request = request.header("Authorization", format!("Bearer {token}"));
+    }
+    request.send()
 }
 
 fn read_http_body(response: reqwest::blocking::Response) -> io::Result<String> {

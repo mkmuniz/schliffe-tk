@@ -229,14 +229,16 @@ stdio mode above remains available:
 
 ```bash
 schliffe mcp --url https://mcp.example.com/mcp \\
-  --header 'Authorization=Bearer ${MCP_TOKEN}'
+  --oauth
 ```
 
 The URL mode reuses schema lazy-loading, result compression, recovery storage,
 and the 64 MiB response limit. Header values may reference an environment
-variable with `${NAME}`; Schliffe does not print the resolved value. OAuth
-browser login and token storage are planned for the next stage. Until then,
-use a short-lived token through an environment variable.
+variable with `${NAME}`; Schliffe does not print the resolved value. With
+`--oauth`, a protected server's 401 response starts the OAuth authorization
+code flow with PKCE in the browser, stores the token under `~/.schliffe/oauth`
+with owner-only permissions, and renews it with a refresh token when possible.
+OAuth endpoints must use HTTPS; only the local callback uses loopback HTTP.
 
 ## How it works
 
