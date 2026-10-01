@@ -215,6 +215,7 @@ claude mcp add filesystem -- schliffe mcp --keep-schemas -- npx -y @modelcontext
 - `--keep-schemas` leaves the tool list untouched (recommended for Claude Code, which already loads schemas on demand). Without it, `tools/list` is shrunk and a `get_tool_schema` tool is added.
 - Use `--compression low|medium|high|max` to choose how much description remains in the compact listing. The default is `medium`.
 - Use `--include-tools search,read` or `--exclude-tools delete_admin` to reduce the exposed tool set before schemas are sent to the agent. Filters are exact-name matches and are optional.
+- Repeated non-file MCP results larger than 2 KiB are deduplicated for 60 seconds per session. The first result remains available; repeats contain only a `schliffe show <hash>` recovery reference. File-reading tools and MCP errors are never deduplicated.
 - Only JSON results are compressed. Tools that read files (`read`, `file`, `cat`, `open`, `download`...) are never touched.
 - If the server disconnects mid-call, pending requests get an error instead of waiting for the process to exit.
 - Each MCP message is limited to 64 MiB in either direction; oversized messages close the connection. Sessions can exceed 64 MiB in total, and valid tool calls have no execution timeout.
