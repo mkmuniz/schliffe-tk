@@ -1,5 +1,6 @@
+use crate::core::secure::{open_append_private, write_private};
 use std::collections::HashMap;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -83,8 +84,9 @@ fn append(line: &str) {
     }
     // Fail-open: a stats write error never affects the command itself.
     // A single small `write` in append mode, so concurrent shims don't
-    // interleave within a line.
-    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
+    // interleave within a line. Owner-only: the log lists which commands
+    // ran and when.
+    if let Ok(mut f) = open_append_private(&path) {
         let _ = f.write_all(line.as_bytes());
     }
 }
@@ -99,7 +101,7 @@ fn compact(path: &PathBuf) {
         .filter(|l| parse(l).is_some_and(|e| e.ts >= cutoff))
         .map(|l| format!("{l}\n"))
         .collect();
-    let _ = fs::write(path, kept);
+    let _ = write_private(path, kept.as_bytes());
 }
 
 struct Entry<'a> {

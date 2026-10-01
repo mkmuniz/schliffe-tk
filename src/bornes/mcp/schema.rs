@@ -2,6 +2,8 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use super::{CompressionLevel, Options};
+
 /// Lazy schema loading (specs.md §6.1). `tools/list` normally returns name +
 /// full description (sometimes a whole paragraph) + full `inputSchema` for
 /// EVERY tool — that's paid for on EVERY session, even if the model uses
@@ -10,20 +12,50 @@ use std::sync::Mutex;
 /// (mod.rs intercepts that call locally, it never reaches the real server).
 const MAX_DESC_CHARS: usize = 140;
 
+#[cfg(test)]
 pub fn transform_tools_list(msg: &Value, schemas: &Mutex<HashMap<String, Value>>) -> Value {
+    transform_tools_list_with_options(
+        msg,
+        schemas,
+        &Options {
+            lazy_schemas: true,
+            ..Options::default()
+        },
+    )
+}
+
+pub fn transform_tools_list_with_options(
+    msg: &Value,
+    schemas: &Mutex<HashMap<String, Value>>,
+    options: &Options,
+) -> Value {
     let Some(tools) = msg.pointer("/result/tools").and_then(Value::as_array) else {
         return msg.clone(); // fail-open (rule 3): unexpected format, pass through as-is
     };
 
+    let filtering = !options.include_tools.is_empty() || !options.exclude_tools.is_empty();
+    if !options.lazy_schemas && !filtering {
+        return msg.clone();
+    }
+
     let mut cache = schemas.lock().unwrap();
     let mut compact: Vec<Value> = Vec::with_capacity(tools.len() + 1);
     for tool in tools {
+        if !tool_allowed(tool, options) {
+            continue;
+        }
         if let Some(name) = tool.get("name").and_then(Value::as_str) {
             cache.insert(name.to_string(), tool.clone());
         }
-        compact.push(compress_tool_for_listing(tool));
+        if options.lazy_schemas {
+            compact.push(compress_tool_for_listing(tool, options.compression));
+        } else {
+            compact.push(tool.clone());
+        }
     }
-    compact.push(synthetic_get_tool_schema_tool());
+    if options.lazy_schemas {
+        compact.push(synthetic_get_tool_schema_tool());
+    }
     drop(cache);
 
     let mut out = msg.clone();
@@ -41,17 +73,35 @@ pub fn transform_tools_list(msg: &Value, schemas: &Mutex<HashMap<String, Value>>
     if new_len < orig_len { out } else { msg.clone() }
 }
 
-fn compress_tool_for_listing(tool: &Value) -> Value {
+fn tool_allowed(tool: &Value, options: &Options) -> bool {
+    let name = tool.get("name").and_then(Value::as_str).unwrap_or("");
+    let included = options.include_tools.is_empty()
+        || options
+            .include_tools
+            .iter()
+            .any(|candidate| candidate == name);
+    included
+        && !options
+            .exclude_tools
+            .iter()
+            .any(|candidate| candidate == name)
+}
+
+fn compress_tool_for_listing(tool: &Value, level: CompressionLevel) -> Value {
     let name = tool
         .get("name")
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    let short = tool
+    let description = tool
         .get("description")
         .and_then(Value::as_str)
-        .map(first_sentence)
-        .unwrap_or_default();
+        .unwrap_or("");
+    let short = match level {
+        CompressionLevel::Low => description.to_string(),
+        CompressionLevel::Medium => first_sentence(description),
+        CompressionLevel::High | CompressionLevel::Max => String::new(),
+    };
     json!({
         "name": name,
         "description": format!("{short} [full schema: get_tool_schema(\"{name}\")]"),
@@ -154,5 +204,48 @@ mod tests {
         let out = transform_tools_list(&msg, &schemas);
         // rule 6: the wrapper + synthetic tool would cost more than the tiny original
         assert_eq!(out, msg);
+    }
+
+    #[test]
+    fn filters_tools_before_compression() {
+        let schemas = Mutex::new(HashMap::new());
+        let msg = json!({
+            "jsonrpc": "2.0", "id": 1,
+            "result": {"tools": [verbose_tool("keep"), verbose_tool("drop")]}
+        });
+        let options = Options {
+            lazy_schemas: true,
+            include_tools: vec!["keep".to_string()],
+            ..Options::default()
+        };
+        let out = transform_tools_list_with_options(&msg, &schemas, &options);
+        let tools = out["result"]["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), 2);
+        assert_eq!(tools[0]["name"], "keep");
+        assert_eq!(tools[1]["name"], "get_tool_schema");
+    }
+
+    #[test]
+    fn max_level_keeps_only_tool_names_in_the_listing() {
+        let schemas = Mutex::new(HashMap::new());
+        let msg = json!({
+            "jsonrpc": "2.0", "id": 1,
+            "result": {"tools": [verbose_tool("search"), verbose_tool("update")]}
+        });
+        let options = Options {
+            lazy_schemas: true,
+            compression: CompressionLevel::Max,
+            ..Options::default()
+        };
+        let out = transform_tools_list_with_options(&msg, &schemas, &options);
+        assert_eq!(out["result"]["tools"][0]["name"], "search");
+        assert_eq!(
+            out["result"]["tools"][0]["description"],
+            " [full schema: get_tool_schema(\"search\")]"
+        );
+        assert_eq!(
+            out["result"]["tools"][0]["inputSchema"],
+            json!({"type": "object"})
+        );
     }
 }

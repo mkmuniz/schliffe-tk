@@ -136,7 +136,7 @@ In real sessions most tokens are the conversation itself, re-read on every turn 
 | Long conversations | A one-time notice at 200k / 400k / 600k / 800k tokens of context | Claude Code hook |
 | Commit messages | Body of `git log` / `git show` summarized to one sentence | TF-IDF, no model |
 
-Commands without a rule (`ls`, `curl`, `make`...) run untouched, streaming live.
+Commands without a rule (`ls`, `curl`, `make`...) run untouched, streaming live. For filtered commands, each captured stream has a 64 MiB buffer limit. Above it, the buffered prefix and remaining bytes pass through raw, preserving the exit code; that stream is not compressed or cached.
 
 ## Pasted logs and long conversations
 
@@ -151,6 +151,17 @@ Before a prompt reaches the model, Schliffe checks two things (no model involved
 2. **A conversation that has grown large.** Every reply re-reads the whole conversation, so past 200k tokens (and again at 400k, 600k, 800k) you get a one-line notice suggesting a new conversation or `/compact`.
 
 Messages follow the language you write in (Portuguese or English). What each kind of log keeps and drops: [`docs/pasted-logs.md`](docs/pasted-logs.md).
+
+## Security
+
+Schliffe sits in front of every command an AI agent runs and stores what those commands printed, so its inputs (command output, MCP results, pasted logs, images) are treated as hostile and its output is assumed to be read by something that acts on it.
+
+- **No network, no telemetry, no scripting, no plugins.** The binary opens no sockets; network-capable and scripting crates are *banned* from the dependency graph by `deny.toml`.
+- **Everything it writes is owner-only** (`0600` files, `0700` directories) — the store holds raw command output, which can contain secrets.
+- **Audited on every PR and daily**: `cargo audit`, `cargo deny` (advisories, bans, licences, registries), `gitleaks`, and a regression test for each vulnerability ever found.
+- **Releases are checksum-verified**; the installer refuses an archive whose SHA-256 doesn't match.
+
+Threat model, the vulnerabilities found and fixed (with how each was exploited), residual risks and how to reproduce the audit: [`SECURITY.md`](SECURITY.md).
 
 ## Safety rules
 
@@ -179,6 +190,7 @@ Details and the evidence behind each rule: [`specs.md`](specs.md) §4.
 | `SCHLIFFE_PROMPT_LOGS` | Pasted logs: `block` (default, copy compact version), `tip` (just a hint), `off` |
 | `SCHLIFFE_CONTEXT_WARN_AT` | Context notice thresholds in tokens (default `200000,400000,600000,800000`, `0` = off) |
 | `SCHLIFFE_NO_HOOK=1` | `install.sh`: skip the Claude Code hooks |
+| `SCHLIFFE_ALLOW_RELATIVE_PATH=1` | Allow relative `$PATH` entries when resolving the real binary (off by default: an untrusted repo could ship its own `git`) |
 
 Commands: `schliffe stats` · `schliffe show <hash>` · `schliffe hook install|uninstall` · `schliffe mcp` · `schliffe compress` · `schliffe store gc|clear` · `schliffe --version`.
 
@@ -201,10 +213,29 @@ claude mcp add filesystem -- schliffe mcp --keep-schemas -- npx -y @modelcontext
 ```
 
 - `--keep-schemas` leaves the tool list untouched (recommended for Claude Code, which already loads schemas on demand). Without it, `tools/list` is shrunk and a `get_tool_schema` tool is added.
+- Use `--compression low|medium|high|max` to choose how much description remains in the compact listing. The default is `medium`.
+- Use `--include-tools search,read` or `--exclude-tools delete_admin` to reduce the exposed tool set before schemas are sent to the agent. Filters are exact-name matches and are optional.
 - Only JSON results are compressed. Tools that read files (`read`, `file`, `cat`, `open`, `download`...) are never touched.
-- If the server dies mid-call, pending requests get an error instead of hanging.
+- If the server disconnects mid-call, pending requests get an error instead of waiting for the process to exit.
+- Each MCP message is limited to 64 MiB in either direction; oversized messages close the connection. Sessions can exceed 64 MiB in total, and valid tool calls have no execution timeout.
 
 Remote servers (like Figma) don't need this — the hook covers them.
+
+### Remote MCP servers (HTTP)
+
+The same proxy can connect to a remote Streamable HTTP server. The local
+stdio mode above remains available:
+
+```bash
+schliffe mcp --url https://mcp.example.com/mcp \\
+  --header 'Authorization=Bearer ${MCP_TOKEN}'
+```
+
+The URL mode reuses schema lazy-loading, result compression, recovery storage,
+and the 64 MiB response limit. Header values may reference an environment
+variable with `${NAME}`; Schliffe does not print the resolved value. OAuth
+browser login and token storage are planned for the next stage. Until then,
+use a short-lived token through an environment variable.
 
 ## How it works
 
@@ -253,6 +284,7 @@ Schliffe exists because the hook-based way of doing this — having Claude Code 
 - [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) — gaps and limitations, with the reasons.
 - [`TASKS.md`](TASKS.md) — backlog.
 - [`MILESTONES.md`](MILESTONES.md) — development history and live validations.
+- [`SECURITY.md`](SECURITY.md) — threat model, fixed vulnerabilities, residual risks, disclosure.
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes.
 
 Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md) · License: [Apache 2.0](LICENSE).

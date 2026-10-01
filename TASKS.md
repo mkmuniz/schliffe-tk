@@ -47,6 +47,9 @@ Every item here comes from a gap already recorded in `KNOWN_ISSUES.md` (which ex
 
 ## Quality / process
 
+- [x] Security audit with specialized tooling and fixes for every finding (M14, 2026-09-28) — see `SECURITY.md`.
+- [ ] Signed releases (sigstore/cosign) so the installer can verify provenance, not just integrity.
+
 - [x] Benchmark against RTK on real commands and close the gaps that don't cost information: `git pull` one-liner, `cargo test` totals (fixing a false-success bug), `git branch -a` grouping, `docker images`/`ps` column compaction (2026-09-26).
 
 - [x] `schliffe stats` — savings report (24h/7d/all time, top savers, unfiltered commands), fed by a size-only log from the shim and the MCP proxy (2026-09-25).

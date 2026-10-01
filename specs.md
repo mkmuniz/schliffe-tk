@@ -256,6 +256,25 @@ Inspired by the mechanism in `atlassian-labs/mcp-compressor` (open source, Rust)
 
 Besides schema lazy-loading, `bornes/mcp` compresses the call's **result** before returning it — using the same JSON filters from section 5.5 (MCP tool results tend to be JSON).
 
+### 6.3 Streamable HTTP transport (stage 1)
+
+The proxy also accepts a remote URL:
+
+```text
+schliffe mcp --url https://server.example/mcp --header 'Authorization=Bearer ${TOKEN}'
+```
+
+The client-facing side remains newline-delimited JSON-RPC over stdio. The
+backend side uses Streamable HTTP `POST`, carries `Mcp-Session-Id` when the
+server provides one, accepts JSON or SSE responses, and reuses the same
+schema/result transformations as the stdio path. `http://` is allowed for
+local development; production credentials should use `https://`.
+
+This stage supports explicit headers, including environment-variable values.
+OAuth discovery, browser authorization, secure token storage, renewal, and
+legacy SSE fallback remain a separate stage because they change the
+credential and connection lifecycle.
+
 **Finding that validates this decision**: we looked into whether the `PostToolUse.updatedToolOutput` hook would solve this more simply, without a proxy. It can't — it's restricted to MCP tools by design, and even then it never fires on Windows+VSCode (section 2). Since `bornes/mcp` is a real proxy (it natively sees the call and the result, directly in the protocol), that hook limitation doesn't affect it — only MCP tools are covered; Claude Code's native tools (WebFetch, WebSearch) remain out of reach, with no known workaround, unless the user swaps the native tool for an equivalent MCP server.
 
 ---

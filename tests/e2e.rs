@@ -510,3 +510,349 @@ fn report_reads_transcripts() {
     assert!(text.contains("acme"), "{text}");
     assert!(text.contains("re-reading the conversation"), "{text}");
 }
+
+/// `schliffe show <hash>` used to build a path straight from its argument:
+/// `schliffe show ../../../../etc/passwd` read arbitrary files. Schliffe's
+/// own recovery hints ("schliffe show <hash>") live in text the model
+/// reads, so a crafted log could have talked an agent into running one.
+#[test]
+fn show_refuses_anything_that_is_not_a_store_hash() {
+    let sb = git_sandbox();
+    let secret = sb.root.join("private-key.txt");
+    fs::write(&secret, "SUPER-SECRET-VALUE").unwrap();
+
+    // The hash from a real recovery hint still works, so the store itself
+    // isn't broken by the validation.
+    let hint = stdout(&sb.run("git", &["log"], true, &[]));
+    let good = hint
+        .split("schliffe show ")
+        .nth(1)
+        .and_then(|r| r.split(')').next())
+        .expect("recovery hint")
+        .to_string();
+    let shown = sb.run("schliffe", &["show", &good], false, &[]);
+    assert_eq!(
+        stdout(&shown),
+        GIT_LOG,
+        "hash={good:?} stderr={:?}",
+        stderr(&shown)
+    );
+
+    for attempt in [
+        "../../../../../../etc/passwd",
+        "../../private-key.txt",
+        "..",
+        "/etc/passwd",
+        "cas/../../../private-key.txt",
+    ] {
+        let out = sb.run("schliffe", &["show", attempt], false, &[]);
+        assert!(!out.status.success(), "accepted {attempt:?}");
+        assert!(
+            !stdout(&out).contains("SUPER-SECRET") && !stdout(&out).contains("root:"),
+            "leaked a file with {attempt:?}: {}",
+            stdout(&out)
+        );
+    }
+    // A multi-byte argument used to panic while slicing the first 2 bytes.
+    let out = sb.run("schliffe", &["show", "€xyz"], false, &[]);
+    assert!(!stderr(&out).contains("panicked"), "{}", stderr(&out));
+}
+
+/// The store keeps raw command output — a `git diff` touching a `.env`, a
+/// stack trace with a connection string. It was world-readable (0644).
+#[test]
+#[cfg(unix)]
+fn everything_written_is_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let sb = git_sandbox();
+    sb.run("git", &["log"], true, &[]);
+
+    let mut checked = 0;
+    let mut stack = vec![sb.root.join(".schliffe")];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        let mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o077;
+        assert_eq!(mode, 0, "directory readable by others: {}", dir.display());
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o077;
+                assert_eq!(mode, 0, "file readable by others: {}", path.display());
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 0, "nothing was written, so nothing was checked");
+}
+
+/// Drain pipes concurrently and fail promptly if a proxy lifecycle regresses.
+fn run_with_deadline(mut cmd: Command, input: Vec<u8>) -> Output {
+    use std::io::{Read, Write};
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let writer = std::thread::spawn(move || {
+        let _ = stdin.write_all(&input);
+    });
+    let mut stdout = child.stdout.take().unwrap();
+    let out = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        stdout.read_to_end(&mut buf).unwrap();
+        buf
+    });
+    let mut stderr = child.stderr.take().unwrap();
+    let err = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        stderr.read_to_end(&mut buf).unwrap();
+        buf
+    });
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("process hung beyond test deadline");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    writer.join().unwrap();
+    Output {
+        status,
+        stdout: out.join().unwrap(),
+        stderr: err.join().unwrap(),
+    }
+}
+
+fn mcp_command(sb: &Sandbox, script: &str) -> Command {
+    let mut cmd = Command::new(BIN);
+    cmd.args(["mcp", "--keep-schemas", "--", "/bin/sh", "-c", script])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", &sb.root)
+        .env("SCHLIFFE_NO_STATS", "1");
+    cmd
+}
+
+#[test]
+fn mcp_session_can_exceed_64_mib_with_small_frames() {
+    let sb = Sandbox::new();
+    // Valid notifications, each comfortably below the per-message budget.
+    let script = r#"i=0
+while [ "$i" -lt 65 ]; do
+    printf '{"jsonrpc":"2.0","method":"notice","params":"'
+    head -c 1048576 /dev/zero | tr '\000' x
+    printf '"}\n'
+    i=$((i + 1))
+done
+printf '{"jsonrpc":"2.0","method":"finished"}\n'
+"#;
+    let out = run_with_deadline(mcp_command(&sb, script), Vec::new());
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(out.stdout.len() > 64 * 1024 * 1024);
+    let text = stdout(&out);
+    assert_eq!(text.lines().count(), 66);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(text.lines().last().unwrap()).unwrap()["method"],
+        "finished"
+    );
+}
+
+#[test]
+fn mcp_oversized_server_frame_is_not_forwarded_or_allowed_to_hang() {
+    let sb = Sandbox::new();
+    let script = "read request\nhead -c 67108865 /dev/zero | tr '\\000' x\nexec sleep 30";
+    let out = run_with_deadline(
+        mcp_command(&sb, script),
+        b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n".to_vec(),
+    );
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("limit"));
+    let response: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(response["id"], 1);
+    assert!(response.get("error").is_some());
+}
+
+#[test]
+fn mcp_oversized_client_frame_stops_the_server() {
+    let sb = Sandbox::new();
+    let out = run_with_deadline(
+        mcp_command(&sb, "exec sleep 30"),
+        vec![b'x'; 64 * 1024 * 1024 + 1],
+    );
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("limit"));
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn mcp_stdout_eof_does_not_wait_forever_for_child_exit() {
+    let sb = Sandbox::new();
+    let out = run_with_deadline(
+        mcp_command(&sb, "read request\nexec 1>&-\nexec sleep 30"),
+        b"{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"}\n".to_vec(),
+    );
+    assert!(!out.status.success());
+    let response: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(response["id"], 7);
+    assert!(response.get("error").is_some());
+}
+
+#[test]
+fn mcp_client_eof_allows_a_slow_valid_response() {
+    let sb = Sandbox::new();
+    let out = run_with_deadline(
+        mcp_command(
+            &sb,
+            "read request\nsleep 2\nprintf '{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{}}\\n'",
+        ),
+        b"{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"}\n".to_vec(),
+    );
+    assert!(out.status.success());
+    let response: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(response.get("result").is_some());
+    assert!(response.get("error").is_none());
+}
+
+#[test]
+fn oversized_captured_streams_pass_through_exactly_and_keep_exit_code() {
+    let sb = Sandbox::new();
+    sb.shim("npm");
+    let script = "#!/bin/sh\nhead -c 67108865 /dev/zero\nhead -c 67108865 /dev/zero >&2\nexit 23\n";
+    let real = sb.root.join("real/npm");
+    fs::write(&real, script).unwrap();
+    fs::set_permissions(&real, fs::Permissions::from_mode(0o755)).unwrap();
+    let mut cmd = Command::new(sb.shims().join("npm"));
+    cmd.arg("install")
+        .env_clear()
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", sb.root.join("real").display()),
+        )
+        .env("HOME", &sb.root)
+        .env("SCHLIFFE_FORCE", "1")
+        .env("SCHLIFFE_NO_STATS", "1");
+    let out = run_with_deadline(cmd, Vec::new());
+    assert_eq!(out.status.code(), Some(23));
+    for stream in [&out.stdout, &out.stderr] {
+        assert_eq!(stream.len(), 64 * 1024 * 1024 + 1);
+        assert!(stream.iter().all(|&b| b == 0));
+    }
+}
+
+#[test]
+fn mcp_pending_request_limit_rejects_excess_without_forwarding_it() {
+    let sb = Sandbox::new();
+    let input: String = (0..1025)
+        .map(|id| format!("{{\"jsonrpc\":\"2.0\",\"id\":{id},\"method\":\"ping\"}}\n"))
+        .collect();
+    let script =
+        "n=0\nwhile IFS= read -r request; do n=$((n + 1)); done\nprintf '%s\\n' \"$n\" >&2";
+    let out = run_with_deadline(mcp_command(&sb, script), input.into_bytes());
+    assert_eq!(stderr(&out).trim(), "1024");
+    let text = stdout(&out);
+    let replies: Vec<serde_json::Value> = text
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(replies.len(), 1025);
+    let rejected = replies.iter().find(|r| r["id"] == 1024).unwrap();
+    assert!(
+        rejected["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("too many pending")
+    );
+}
+
+#[test]
+fn mcp_http_reuses_schema_and_result_compression() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let sb = Sandbox::new();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        for request_number in 0..2 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut chunk = [0; 4096];
+            loop {
+                let n = stream.read(&mut chunk).unwrap();
+                request.extend_from_slice(&chunk[..n]);
+                if request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let header_end = request.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+            let headers = String::from_utf8_lossy(&request[..header_end]);
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    line.to_ascii_lowercase()
+                        .strip_prefix("content-length:")?
+                        .trim()
+                        .parse::<usize>()
+                        .ok()
+                })
+                .unwrap_or(0);
+            while request.len() < header_end + content_length {
+                let n = stream.read(&mut chunk).unwrap();
+                request.extend_from_slice(&chunk[..n]);
+            }
+            let body = if request_number == 0 {
+                serde_json::json!({
+                    "jsonrpc": "2.0", "id": 1,
+                    "result": {"tools": [
+                        {"name":"search","description":format!("Searches documents. {}", "Supports pagination and filters. ".repeat(30)),"inputSchema":{"type":"object","properties":{"query":{"type":"string"},"category":{"type":"string"},"limit":{"type":"integer"}}}},
+                        {"name":"update","description":format!("Updates a document. {}", "Requires confirmation and a document id. ".repeat(30)),"inputSchema":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"}}}}
+                    ]}
+                })
+            } else {
+                serde_json::json!({
+                    "jsonrpc": "2.0", "id": 2,
+                    "result": {"content": [{"type":"text","text":serde_json::json!({"items":[null,null,null,null,null,null,null,null,null,null,"eleven","twelve"],"message":"x".repeat(400)}).to_string()}]}
+                })
+            };
+            let body = body.to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nMcp-Session-Id: e2e\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(), body
+            )
+            .unwrap();
+        }
+    });
+
+    let mut command = Command::new(BIN);
+    command
+        .args(["mcp", "--url", &format!("http://{address}")])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", &sb.root)
+        .env("SCHLIFFE_NO_STATS", "1");
+    let input = b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}\n".to_vec();
+    let out = run_with_deadline(command, input);
+    server.join().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    let lines: Vec<_> = stdout(&out)
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0]["result"]["tools"].as_array().unwrap().len(), 3);
+    assert!(stdout(&out).len() < 2_000);
+}

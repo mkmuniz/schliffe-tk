@@ -31,7 +31,7 @@ A consolidation of everything marked "left for later" across M0-M8 (previously s
 
 - **Validated against one real MCP server only** (`@modelcontextprotocol/server-filesystem`, 2026-09-24). Other servers may shape results differently. File-reading tools are detected by name (`read`/`file`/`cat`/`open`/`download`/`blob`), which is a heuristic: a tool returning file content under another name would still get its JSON compacted — add it to `SCHLIFFE_MCP_RAW_TOOLS`.
 - **Schema lazy-loading overlaps with Claude Code's own tool deferral.** Use `--keep-schemas` there (see README); lazy-loading is still the default for other clients.
-- **The stdio proxy is stdio only; remote servers go through the hook.** HTTP/OAuth servers (e.g. Figma) are handled by the Claude Code `PostToolUse` hook (`schliffe hook install`), which only works where Claude Code honors `updatedToolOutput`: macOS, Linux, WSL — **not native Windows**.
+- **Remote MCP proxy support is currently HTTP plus explicit headers only.** Use `schliffe mcp --url https://... --header 'Authorization=Bearer ${TOKEN}'` for Streamable HTTP servers. OAuth browser login, token storage, and renewal are not implemented yet; remote results can still go through the Claude Code `PostToolUse` hook, which only works where Claude Code honors `updatedToolOutput`: macOS, Linux, WSL — **not native Windows**.
 - **No field pruning by semantic relevance** (pagination, HATEOAS links, redundant timestamps) — only the 3 purely mechanical techniques (null-strip, string truncation, array cap). Pruning by relevance would require knowing the specific API, which would go against business rule 5.
 - **Requests the MCP server itself initiates** (e.g. `sampling/createMessage`) pass straight through with no interception or compression — not the token-waste axis that motivated this borne, but also not addressed.
 
@@ -68,3 +68,13 @@ A consolidation of everything marked "left for later" across M0-M8 (previously s
 - **Library vs. app frames are guessed by prefix** (`node_modules`, `java.`, `org.springframework.`, `System.`, `Microsoft.`…). A project whose own namespace starts like a framework would see its frames counted as library frames — still recoverable via `schliffe show`.
 - **Context size comes from the session transcript** (the latest reply's usage); the notice appears on the prompt after the threshold was crossed.
 - **Not native Windows** (same as the other hook).
+
+## Security
+
+Threat model, fixed vulnerabilities and residual risks live in `SECURITY.md`. The gaps that remain open:
+
+- **`curl … | bash` trusts GitHub.** `SHA256SUMS` proves the download wasn't altered in transit, not that the release itself is honest. Signed releases (sigstore/cosign) aren't implemented; `--from-source` from a clone you've read is the stricter path.
+- **A script the model runs through a shell is still filtered** (`bash deploy.sh` → `git diff`): indistinguishable from a command the model ran. `SCHLIFFE_DISABLE=1` inside such a script.
+- **Library-vs-app frame detection is a heuristic**, so a project namespaced like a framework can have its own frames collapsed (recoverable, never deleted).
+- **No protection against code already running as your user** — Schliffe defends against *other* accounts on the machine.
+- **`deny.toml`'s banned-crate list is a denylist**, so it names the capabilities Schliffe must never gain rather than proving the absence of all others; `cargo audit`/`cargo deny` cover the rest.

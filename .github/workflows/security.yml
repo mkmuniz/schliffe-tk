@@ -1,0 +1,98 @@
+name: Security
+
+# Supply-chain and code checks. Runs on every PR to main, on pushes to
+# main, and daily — a dependency that is safe today can have an advisory
+# published against it tomorrow, and nothing in the repo would change.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  supply-chain:
+    name: dependencies (audit + deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo audit (RustSec advisories)
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: cargo deny (bans, licenses, sources, advisories)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+      - name: the lockfile must be respected
+        # A build that silently picks different versions than Cargo.lock
+        # defeats the point of auditing the lockfile.
+        run: cargo build --locked --release
+
+  code:
+    name: code (exploit regressions + unsafe review)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: exploit regression tests
+        # Each of these locks in a vulnerability that was verified
+        # exploitable before it was fixed (see SECURITY.md). Run one by
+        # one: `cargo test` takes a single filter, extra words become
+        # harness arguments and would silently select nothing.
+        run: |
+          for t in \
+            only_real_store_hashes_are_accepted \
+            written_files_are_owner_only_and_dirs_too \
+            a_symlink_at_the_destination_is_replaced_not_followed \
+            oversized_input_is_refused \
+            relative_path_entries_are_never_used \
+            decompression_bomb_is_refused \
+            show_refuses_anything_that_is_not_a_store_hash \
+            everything_written_is_owner_only \
+            oversized_captured_streams_pass_through_exactly_and_keep_exit_code \
+            mcp_session_can_exceed_64_mib_with_small_frames \
+            mcp_oversized_client_frame_stops_the_server \
+            mcp_oversized_server_frame_is_not_forwarded_or_allowed_to_hang \
+            mcp_stdout_eof_does_not_wait_forever_for_child_exit \
+            mcp_client_eof_allows_a_slow_valid_response
+          do
+            echo "== $t"
+            out=$(cargo test --locked "$t" 2>&1)
+            echo "$out" | grep -E "test result" || true
+            echo "$out" | grep -q "1 passed" || { echo "$out"; echo "NOT RUN: $t"; exit 1; }
+          done
+      - name: every `unsafe` has a SAFETY comment
+        run: |
+          # Each unsafe block must be preceded by `// SAFETY:` within two
+          # lines. Anything else must be reviewed before it lands.
+          bad=0
+          while IFS= read -r hit; do
+            file=${hit%%:*}; rest=${hit#*:}; line=${rest%%:*}
+            start=$((line > 3 ? line - 3 : 1))
+            if ! sed -n "${start},${line}p" "$file" | grep -q "SAFETY:"; then
+              echo "unsafe without a SAFETY comment: $file:$line"; bad=1
+            fi
+          done < <(grep -rn "unsafe" --include='*.rs' src/ tests/)
+          [ "$bad" -eq 0 ] && echo "ok: every unsafe is documented"
+          exit "$bad"
+
+  secrets:
+    name: no secrets committed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

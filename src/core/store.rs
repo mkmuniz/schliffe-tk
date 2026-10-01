@@ -1,3 +1,4 @@
+use crate::core::secure::{is_store_hash, write_private};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -26,16 +27,20 @@ fn hash_hex(bytes: &[u8]) -> String {
     digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
 }
 
+/// Path of an entry. `key_hash` is always a value `hash_hex` produced, so
+/// it can't contain a path separator — callers taking a hash from outside
+/// must check it with `is_store_hash` first (see `get`).
 fn sharded_path(subdir: &str, key_hash: &str) -> PathBuf {
-    let shard = &key_hash[..2.min(key_hash.len())];
+    debug_assert!(is_store_hash(key_hash), "unchecked hash: {key_hash:?}");
+    let shard = &key_hash[..2];
     store_root().join(subdir).join(shard).join(key_hash)
 }
 
+/// Every store write goes through this: owner-only (0600), atomic, and it
+/// never follows a symlink planted at the destination. The store holds raw
+/// command output, which can contain secrets.
 fn write_file(path: &Path, content: &str) {
-    if let Some(dir) = path.parent() {
-        let _ = fs::create_dir_all(dir);
-    }
-    let _ = fs::write(path, content);
+    let _ = write_private(path, content.as_bytes());
 }
 
 /// Content-addressed store (CAS) — the same content always produces the same
@@ -51,9 +56,15 @@ pub fn put(content: &str) -> String {
     hash
 }
 
+/// Reads an entry by hash. The hash comes straight from the command line
+/// (`schliffe show <hash>`), so it is validated before it reaches a path:
+/// anything that isn't a real store hash is rejected, which is what keeps
+/// `schliffe show ../../../../etc/passwd` from reading arbitrary files.
 pub fn get(hash: &str) -> Option<String> {
-    let path = sharded_path("cas", hash);
-    fs::read_to_string(path).ok()
+    if !is_store_hash(hash) {
+        return None;
+    }
+    fs::read_to_string(sharded_path("cas", hash)).ok()
 }
 
 /// Cache keyed by an arbitrary string (8.2) — unlike the CAS, the key is the
@@ -191,11 +202,14 @@ mod tests {
     fn with_isolated_store<T>(f: impl FnOnce() -> T) -> T {
         let _guard = TEST_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("schliffe-store-test-{}", now_secs()));
+        // SAFETY: TEST_LOCK serializes every store test, so no other
+        // thread reads the environment while it changes.
         unsafe {
             std::env::set_var("SCHLIFFE_STORE_DIR", &dir);
         }
         let result = f();
         let _ = fs::remove_dir_all(&dir);
+        // SAFETY: still inside the TEST_LOCK critical section.
         unsafe {
             std::env::remove_var("SCHLIFFE_STORE_DIR");
         }

@@ -13,6 +13,24 @@ pub fn run(args: &[String]) -> ExitCode {
     // meta-commands because it has variable arity (everything after "--"
     // belongs to the real server, not to Schliffe).
     if args.first().map(String::as_str) == Some("mcp") {
+        let options: Vec<&String> = args
+            .iter()
+            .skip(1)
+            .take_while(|a| a.as_str() != "--")
+            .collect();
+        if let Some(url) = options
+            .windows(2)
+            .find(|pair| pair[0] == "--url")
+            .map(|pair| pair[1].clone())
+        {
+            let headers = options
+                .windows(2)
+                .filter(|pair| pair[0] == "--header")
+                .filter_map(|pair| pair[1].split_once('='))
+                .map(|(name, value)| (name.to_string(), value.to_string()))
+                .collect();
+            return bornes::mcp::run_http_with_options(&url, headers, parse_mcp_options(&options));
+        }
         let after_sep = args
             .iter()
             .skip(1)
@@ -20,16 +38,13 @@ pub fn run(args: &[String]) -> ExitCode {
             .skip(1);
         let server_args: Vec<String> = after_sep.cloned().collect();
         // Options live between "mcp" and "--".
-        let lazy_schemas = !args
-            .iter()
-            .skip(1)
-            .take_while(|a| a.as_str() != "--")
-            .any(|a| a == "--keep-schemas");
         return match server_args.split_first() {
-            Some((cmd, rest)) => bornes::mcp::run(cmd, rest, lazy_schemas),
+            Some((cmd, rest)) => {
+                bornes::mcp::run_with_options(cmd, rest, parse_mcp_options(&options))
+            }
             None => {
                 eprintln!(
-                    "usage: schliffe mcp [--keep-schemas] -- <real MCP server command> [args...]"
+                    "usage: schliffe mcp [options] -- <real MCP server command> [args...]\n       schliffe mcp [options] --url <https://server/mcp>\noptions: --keep-schemas --compression low|medium|high|max --include-tools a,b --exclude-tools a,b --header Name=Value"
                 );
                 ExitCode::FAILURE
             }
@@ -114,6 +129,38 @@ pub fn run(args: &[String]) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn parse_mcp_options(args: &[&String]) -> bornes::mcp::Options {
+    let mut options = bornes::mcp::Options {
+        lazy_schemas: !args.iter().any(|arg| *arg == "--keep-schemas"),
+        ..bornes::mcp::Options::default()
+    };
+    if let Some(pair) = args.windows(2).find(|pair| pair[0] == "--compression") {
+        options.compression = match pair[1].as_str() {
+            "low" => bornes::mcp::CompressionLevel::Low,
+            "high" => bornes::mcp::CompressionLevel::High,
+            "max" => bornes::mcp::CompressionLevel::Max,
+            _ => bornes::mcp::CompressionLevel::Medium,
+        };
+    }
+    options.include_tools = csv_option(args, "--include-tools");
+    options.exclude_tools = csv_option(args, "--exclude-tools");
+    options
+}
+
+fn csv_option(args: &[&String], flag: &str) -> Vec<String> {
+    args.windows(2)
+        .find(|pair| pair[0] == flag)
+        .map(|pair| {
+            pair[1]
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn run_compress(max_sentences: Option<usize>) -> ExitCode {

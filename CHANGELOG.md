@@ -4,6 +4,19 @@ All notable changes to this project are recorded here. Format loosely inspired b
 
 ## [Unreleased]
 
+### Security
+
+Full write-up, including how each was exploited and its regression test: [`SECURITY.md`](SECURITY.md).
+
+- **Arbitrary file read via `schliffe show`** (path traversal). `schliffe show ../../../../etc/passwd` read any file. Reachable through prompt injection, since Schliffe's own recovery hints sit in text the model reads. The argument must now be exactly 16 lowercase hex characters.
+- **Code execution via a relative `$PATH` entry.** With `.` in `$PATH`, an executable named `git` inside a cloned repository was run by the shim. Non-absolute entries are now skipped (`SCHLIFFE_ALLOW_RELATIVE_PATH=1` restores the old behavior).
+- **Secrets written world-readable.** The store keeps raw command output and the prompt hook keeps the prompt verbatim, all created `0644`. Everything Schliffe writes is now `0600` (directories `0700`), and `install.sh` repairs existing installs.
+- **Symlink at a store destination** was written through; writes are now `O_EXCL` temp file + `rename`.
+- **Crash** on a multi-byte argument to `schliffe show`.
+- **Unbounded input** from hook stdin and the MCP proxy, now capped at 64 MB.
+- **Image decompression bomb** now refused by an explicit decode ceiling instead of a dependency's default.
+- New `Security` workflow (PRs + daily): `cargo audit`, `cargo deny` (`deny.toml`: banned crates, licence and registry allow-lists), `gitleaks`, a regression test per vulnerability, and a `SAFETY:` comment required on every `unsafe`.
+
 ### Added
 - **One-command install**: `curl -fsSL https://raw.githubusercontent.com/mkmuniz/schliffe-tk/main/install.sh | bash` downloads the latest release's prebuilt binary, verifies it against `SHA256SUMS` (never installs an unverified archive), and needs no Rust. Inside a clone with Rust it still builds that checkout; `--prebuilt` / `--from-source` force either. `install.ps1` gets the same (`-Prebuilt` / `-FromSource`, `irm … | iex`). A new `Installers` workflow runs both installers on Linux, macOS and Windows runners, including a tampered-archive check.
 - `schliffe report [--days N]`: where the tokens of Claude Code sessions go, from its transcripts (read-only) — cost split into re-reads / new content / replies / thinking, the most expensive sessions with their peak context, what fills the conversations by source (conversation, shell, MCP per server, file reads, images by billed pixels), Schliffe's share, and up to three levers tied to the numbers.

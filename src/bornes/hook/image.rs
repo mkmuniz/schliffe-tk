@@ -84,6 +84,23 @@ pub fn shrink_images(value: &mut Value, max_edge: u32, out: &mut Vec<Shrunk>) {
     }
 }
 
+/// Largest image Schliffe will decode, in bytes of pixel buffer (~256 MB,
+/// comfortably above any real screenshot).
+const MAX_DECODED_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Decodes with an explicit memory ceiling, so a "decompression bomb" — a
+/// 1 MB PNG declaring 20000×20000, which expands to 1.2 GB — is refused
+/// instead of exhausting RAM. The `image` crate happens to apply a default
+/// limit today, but a security property must not depend on a dependency's
+/// default: this states it, and `bomb_is_refused` locks it in.
+fn decode_bounded(bytes: &[u8], format: ImageFormat) -> Option<image::DynamicImage> {
+    let mut reader = image::ImageReader::with_format(Cursor::new(bytes), format);
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(MAX_DECODED_BYTES);
+    reader.limits(limits);
+    reader.decode().ok()
+}
+
 fn shrink_one(b64: &str, media_type: Option<&str>, max_edge: u32) -> Option<(String, Shrunk)> {
     let bytes = STANDARD.decode(b64).ok()?;
     let format = match media_type {
@@ -93,7 +110,7 @@ fn shrink_one(b64: &str, media_type: Option<&str>, max_edge: u32) -> Option<(Str
     if !matches!(format, ImageFormat::Png | ImageFormat::Jpeg) {
         return None; // re-encoding would change the declared media type
     }
-    let img = image::load_from_memory_with_format(&bytes, format).ok()?;
+    let img = decode_bounded(&bytes, format)?;
     let (w, h) = (img.width(), img.height());
     if w.max(h) <= max_edge {
         return None;
@@ -164,6 +181,66 @@ pub mod tests {
         shrink_images(&mut v, 0, &mut out);
         assert_eq!(v["data"], big);
         assert!(out.is_empty());
+    }
+
+    /// A "decompression bomb": a tiny file declaring huge dimensions. It
+    /// must be refused quickly, with the image left untouched, rather than
+    /// allocating the ~4.8 GB it asks for.
+    #[test]
+    fn decompression_bomb_is_refused() {
+        use std::io::Write;
+        let (w, h) = (40_000u32, 40_000u32);
+        let chunk = |kind: &[u8], data: &[u8]| {
+            let mut out = (data.len() as u32).to_be_bytes().to_vec();
+            out.extend_from_slice(kind);
+            out.extend_from_slice(data);
+            let mut crc = crc32(kind);
+            crc = crc32_continue(crc, data);
+            out.extend_from_slice(&crc.to_be_bytes());
+            out
+        };
+        let mut ihdr = Vec::new();
+        ihdr.write_all(&w.to_be_bytes()).unwrap();
+        ihdr.write_all(&h.to_be_bytes()).unwrap();
+        ihdr.write_all(&[8, 2, 0, 0, 0]).unwrap();
+        let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+        png.extend_from_slice(&chunk(b"IHDR", &ihdr));
+        png.extend_from_slice(&chunk(b"IDAT", &[0x78, 0x9c, 0x03, 0x00, 0, 0, 0, 1]));
+        png.extend_from_slice(&chunk(b"IEND", b""));
+        assert!(png.len() < 4096, "the bomb must be small: {}", png.len());
+
+        let started = std::time::Instant::now();
+        assert!(decode_bounded(&png, ImageFormat::Png).is_none());
+        assert!(started.elapsed().as_secs() < 5);
+
+        // End to end: the block is left exactly as it came in.
+        let mut v =
+            json!({"type": "image", "data": STANDARD.encode(&png), "mimeType": "image/png"});
+        let before = v.clone();
+        let mut out = Vec::new();
+        shrink_images(&mut v, 1280, &mut out);
+        assert_eq!(v, before);
+        assert!(out.is_empty());
+    }
+
+    // Minimal CRC-32 so the fixture is a byte-valid PNG (the decoder must
+    // refuse it on size, not on a malformed chunk).
+    fn crc32(data: &[u8]) -> u32 {
+        crc32_continue(0, data)
+    }
+    fn crc32_continue(prev: u32, data: &[u8]) -> u32 {
+        let mut c = prev ^ 0xffff_ffff;
+        for &b in data {
+            c ^= b as u32;
+            for _ in 0..8 {
+                c = if c & 1 != 0 {
+                    0xedb8_8320 ^ (c >> 1)
+                } else {
+                    c >> 1
+                };
+            }
+        }
+        c ^ 0xffff_ffff
     }
 
     #[test]
