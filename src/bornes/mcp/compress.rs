@@ -1,5 +1,7 @@
 use serde_json::Value;
 
+const MIN_DEDUP_BYTES: usize = 2 * 1024;
+
 /// MCP tool call result compression (specs.md §6.2, reuses the techniques
 /// from §5.5). Only the three safe, purely mechanical ones make it into v1 —
 /// none of them "guesses" anything, they only remove an explicitly absent
@@ -42,6 +44,15 @@ pub fn compress_tools_call_result(
     tool_name: &str,
     store: impl Fn(&str) -> String,
 ) -> Value {
+    if let Some(deduplicated) = deduplicate_repeated_result(msg, tool_name, &store, |raw| {
+        let session = std::env::var("CLAUDE_CODE_SESSION_ID").ok();
+        matches!(
+            crate::core::store::check_and_record_dedup(raw, 60, session.as_deref()),
+            crate::core::store::Dedup::SeenRecently
+        )
+    }) {
+        return deduplicated;
+    }
     let Some(content) = msg.pointer("/result/content").and_then(Value::as_array) else {
         return msg.clone();
     };
@@ -60,6 +71,37 @@ pub fn compress_tools_call_result(
         .map(|s| s.len())
         .unwrap_or(usize::MAX);
     if new_len < orig_len { out } else { msg.clone() }
+}
+
+/// Repeated large results are a common MCP pattern: refreshing a dashboard or
+/// listing the same project tree can return the same payload several times in
+/// one session. Keep the first copy in the private store and replace later
+/// copies with a recoverable reference. Small results are excluded because a
+/// reference would cost more than the content and because this must never
+/// inflate output (business rule 6).
+fn deduplicate_repeated_result(
+    msg: &Value,
+    tool_name: &str,
+    store: &impl Fn(&str) -> String,
+    seen_recently: impl Fn(&str) -> bool,
+) -> Option<Value> {
+    if is_raw_tool(tool_name)
+        || msg.pointer("/result/isError").and_then(Value::as_bool) == Some(true)
+    {
+        return None;
+    }
+    let raw = serde_json::to_string(msg).ok()?;
+    if raw.len() < MIN_DEDUP_BYTES || !seen_recently(&raw) {
+        return None;
+    }
+    let hash = store(&raw);
+    let mut out = msg.clone();
+    out["result"]["content"] = serde_json::json!([{
+        "type": "text",
+        "text": format!("(same MCP result as before — full output: schliffe show {hash})"),
+    }]);
+    let compact_len = serde_json::to_string(&out).ok()?.len();
+    (compact_len < raw.len()).then_some(out)
 }
 
 /// The content-block part of `compress_tools_call_result`, shared with the
@@ -253,5 +295,40 @@ mod tests {
         assert_eq!(out["result"]["content"].as_array().unwrap().len(), 1);
         let text = out["result"]["content"][0]["text"].as_str().unwrap();
         assert_eq!(text, r#"{"zeta":1,"beta":"x"}"#);
+    }
+
+    #[test]
+    fn repeated_large_result_becomes_a_recoverable_reference() {
+        let items: Vec<Value> = (0..400).map(|_| json!("same payload")).collect();
+        let msg = wrap(&json!({"items": items}));
+        let out = deduplicate_repeated_result(
+            &msg,
+            "search",
+            &|raw| {
+                assert!(raw.len() > MIN_DEDUP_BYTES);
+                "deadbeef01234567".into()
+            },
+            |_| true,
+        )
+        .expect("a repeated large result should be reduced");
+        assert!(
+            out["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("schliffe show deadbeef01234567")
+        );
+        assert!(
+            serde_json::to_string(&out).unwrap().len() < serde_json::to_string(&msg).unwrap().len()
+        );
+    }
+
+    #[test]
+    fn repeated_file_result_is_never_replaced() {
+        let items: Vec<Value> = (0..400).map(|_| json!("file content")).collect();
+        let msg = wrap(&json!({"items": items}));
+        assert!(
+            deduplicate_repeated_result(&msg, "read_text_file", &|_| "hash".into(), |_| true)
+                .is_none()
+        );
     }
 }

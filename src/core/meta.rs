@@ -44,7 +44,7 @@ pub fn run(args: &[String]) -> ExitCode {
             }
             None => {
                 eprintln!(
-                    "usage: schliffe mcp [options] -- <real MCP server command> [args...]\n       schliffe mcp [options] --url <https://server/mcp>\noptions: --keep-schemas --compression low|medium|high|max --include-tools a,b --exclude-tools a,b --header Name=Value"
+                    "usage: schliffe mcp [options] -- <real MCP server command> [args...]\n       schliffe mcp [options] --url <https://server/mcp>\noptions: --keep-schemas --oauth --compression low|medium|high|max --include-tools a,b --exclude-tools a,b --header Name=Value"
                 );
                 ExitCode::FAILURE
             }
@@ -146,6 +146,7 @@ fn parse_mcp_options(args: &[&String]) -> bornes::mcp::Options {
     }
     options.include_tools = csv_option(args, "--include-tools");
     options.exclude_tools = csv_option(args, "--exclude-tools");
+    options.oauth = args.iter().any(|arg| arg.as_str() == "--oauth");
     options
 }
 

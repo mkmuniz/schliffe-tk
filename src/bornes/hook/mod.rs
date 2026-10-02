@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 /// `bornes/hook` — the fourth interception point, for what the other three
-/// can't reach (2026-09-25): remote MCP servers (HTTP + OAuth, e.g. Figma —
+/// can't reach (2026-09-25): remote MCP servers (HTTP, including OAuth-managed
+/// endpoints such as Figma —
 /// the stdio proxy can't sit in front of them) and images read by Claude
 /// Code's own Read tool (never touch a shell or an MCP pipe).
 ///

@@ -271,9 +271,10 @@ schema/result transformations as the stdio path. `http://` is allowed for
 local development; production credentials should use `https://`.
 
 This stage supports explicit headers, including environment-variable values.
-OAuth discovery, browser authorization, secure token storage, renewal, and
-legacy SSE fallback remain a separate stage because they change the
-credential and connection lifecycle.
+With `--oauth`, protected servers can use OAuth discovery, browser
+authorization with PKCE, secure token storage and refresh-token renewal.
+Legacy SSE fallback and server-initiated HTTP streams remain separate because
+they change the connection lifecycle.
 
 **Finding that validates this decision**: we looked into whether the `PostToolUse.updatedToolOutput` hook would solve this more simply, without a proxy. It can't — it's restricted to MCP tools by design, and even then it never fires on Windows+VSCode (section 2). Since `bornes/mcp` is a real proxy (it natively sees the call and the result, directly in the protocol), that hook limitation doesn't affect it — only MCP tools are covered; Claude Code's native tools (WebFetch, WebSearch) remain out of reach, with no known workaround, unless the user swaps the native tool for an equivalent MCP server.
 
@@ -423,7 +424,7 @@ The 42 commands in the two bottom ranges group into 4 patterns:
 Everything left to decide has well-defined scope from the sections above; what's missing is deciding *how much* goes into each phase, not *which technique* to use anymore.
 
 - [ ] **v1 scope for `bornes/comandos`**: which commands get a dedicated parser (Layer A) in v1 vs. staying on the generic Layer B? Starting suggestion: the same highest-traffic ones we've already validated (`git status/log/diff`, `pytest`, `cargo test`).
-- [x] **v1 scope for `bornes/mcp`** — **decided and implemented (2026-07-26): basic schema lazy-loading + result compression, stdio only.** OAuth and remote HTTP streaming are left for later — neither is necessary for the majority case (a local MCP server over stdio, which is how most servers configured in Claude Code run today).
+- [x] **v1 scope for `bornes/mcp`** — basic schema lazy-loading + result compression for stdio and Streamable HTTP, with exact tool filters and configurable compression levels. OAuth browser login, token storage, renewal, and server-initiated HTTP streams remain a later stage.
 - [x] **v1 scope for `bornes/prosa`** — **decided and implemented (2026-07-26): commit body only (`git log`/`git show`) + the standalone `schliffe compress` utility.** `/compress` is left out (see revised §7.2/§7.3: it's a different task, not a deferred use case). Summarizing a long docstring/comment during a file read is left for whenever a `read`/`smart` parser exists in Layer A — there's nowhere to plug it in yet.
 - [x] **Layer B data format (specs §5.2/§5.3)** — **decided: TOML** (2026-07-26). Three reasons: (1) first-class, mature support in the Rust ecosystem (the `toml` crate, the same format Cargo itself uses — `serde_yaml`, Rust's main YAML crate, was archived by its original maintainer at one point, evidence of relative instability on the YAML side); (2) TOML is more explicit and resistant to silent corruption (YAML has indentation sensitivity that sometimes produces no parse error, just wrong structure with no warning, plus implicit type coercion — the "Norway problem", `NO` becoming a boolean) — that goes directly against business rules 3 and 5 (fail-open, never falsify); (3) the same format RTK already uses for its long tail, making cross-referencing easier. `snip` chose YAML for multi-line string ergonomics in test fixtures — a trade-off that doesn't pay off given that reliability outweighs ergonomics in this project's philosophy.
 - [x] **v1 scope for cache (section 8.2)** — **decided (2026-07-26): only immutable git history, and only `git show <explicit-sha>`** (not `HEAD`, not `git log`, not the working tree). It's the only case where "immutable" is provable without a heuristic (an explicit SHA never changes content; `HEAD`/a branch can point to a different commit tomorrow). File reading is left out of v1 (Layer A still has no `read`/`smart` parser — nothing to cache yet). The cache key includes a filter format version (`git-show:v1:<sha>`) so it never serves output from an old Schliffe version after the filter changes.
