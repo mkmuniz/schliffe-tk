@@ -1,0 +1,883 @@
+const imgVariant2 = "https://www.figma.com/api/mcp/asset/536f8795-eb07-4714-a771-217523229178.svg";
+const imgVariant13 = "https://www.figma.com/api/mcp/asset/62d7809f-b988-4ec3-966b-53e747af9bd9.svg";
+const imgVariant14 = "https://www.figma.com/api/mcp/asset/4f04cf8d-1d2c-4421-9c37-cb2a6a93fdd9.svg";
+const imgGroup = "https://www.figma.com/api/mcp/asset/64409429-477f-4e50-b22e-62b0196d76a4.svg";
+const imgGroup1 = "https://www.figma.com/api/mcp/asset/f5d8ad30-d53c-4ebf-8183-00ac7c9ad901.svg";
+const imgGroup2 = "https://www.figma.com/api/mcp/asset/8de02ead-ae61-4e8b-b8d2-fced6c8c6405.svg";
+const imgVariant17 = "https://www.figma.com/api/mcp/asset/dbfe81a8-ee4f-4916-a8b0-60ab546818fd.svg";
+const imgGroup3 = "https://www.figma.com/api/mcp/asset/7fc458c0-89fc-4895-9557-f3ba983c41ac.svg";
+const imgGroup4 = "https://www.figma.com/api/mcp/asset/e33d90d9-d5f1-4a9f-ad3e-a064f8a41616.svg";
+const imgVariant20 = "https://www.figma.com/api/mcp/asset/ed350964-f081-48f4-a365-6962ca858dcd.svg";
+const imgElementoBanner2Png = "https://www.figma.com/api/mcp/asset/2ee9fbe0-9af7-4ae4-85f6-4321fb805626.png";
+const imgTodosexames1Png = "https://www.figma.com/api/mcp/asset/d2fd111b-5371-4d51-8b5f-6a31d38f91ed.png";
+const imgEclipsePng = "https://www.figma.com/api/mcp/asset/bbb76ebc-cc22-4b05-8794-4af09aec4bdd.png";
+const imgNationalCancerInstitutePp5NO5GcLdAUnsplash = "https://www.figma.com/api/mcp/asset/e0db743e-3d69-436a-a105-69796ce3cf67.png";
+const imgNationalCancerInstitutePp5NO5GcLdAUnsplash1 = "https://www.figma.com/api/mcp/asset/f3858ae0-c8cc-4f74-8553-61b2815c54a9.png";
+const imgNationalCancerInstitutePp5NO5GcLdAUnsplash2 = "https://www.figma.com/api/mcp/asset/d740d53d-0386-44a0-8812-648cd16cfe25.png";
+const imgImage = "https://www.figma.com/api/mcp/asset/1126f6bb-d896-4919-9903-d55f8aa02243.png";
+const imgTwoPeoplesPng = "https://www.figma.com/api/mcp/asset/43f20d42-bb07-46b5-85d0-e4d1bee7cba3.png";
+const imgLogo = "https://www.figma.com/api/mcp/asset/4ca9d779-8753-42db-b674-40474724ebeb.svg";
+const imgLogo1 = "https://www.figma.com/api/mcp/asset/edd6eb97-fb13-4143-9c16-e20cce3fe1a0.svg";
+const imgIcon = "https://www.figma.com/api/mcp/asset/be50ec09-8db6-4140-9422-504db4d4ebba.svg";
+const imgG1696 = "https://www.figma.com/api/mcp/asset/8a5ec8fb-c3e5-40d4-9377-3206ba14b258.svg";
+const imgG1697 = "https://www.figma.com/api/mcp/asset/35a958a3-72a7-40a6-b075-edeecac49cd2.svg";
+const imgIcon1 = "https://www.figma.com/api/mcp/asset/e5c1d7b2-6543-49a0-8eaa-d8d4d754cb3d.svg";
+const imgIcon2 = "https://www.figma.com/api/mcp/asset/1effd280-159f-4fb1-8a6c-bcdfe852e0f5.svg";
+const imgIcon3 = "https://www.figma.com/api/mcp/asset/3d6759ee-2229-482e-afab-bed4141545f0.svg";
+
+type Component1Props = {
+  className?: string;
+  variant?: "2" | "13" | "14" | "15" | "16" | "17" | "18" | "19" | "20";
+};
+
+function Component1({ className, variant = "2" }: Component1Props) {
+  const is13 = variant === "13";
+  const is14 = variant === "14";
+  const is16 = variant === "16";
+  const is17 = variant === "17";
+  const is19 = variant === "19";
+  const is20 = variant === "20";
+  return (
+    <div className={className || `relative ${is20 ? String.raw`opacity-[calc(var(--opacity\/100,100)/100)] size-[16px]` : ["18", "19"].includes(variant) ? String.raw`opacity-[calc(var(--opacity\/100,100)/100)] overflow-clip size-[16px]` : is17 ? String.raw`h-[16.5px] opacity-[calc(var(--opacity\/100,100)/100)] w-[24px]` : ["15", "16"].includes(variant) ? String.raw`opacity-[calc(var(--opacity\/100,100)/100)] overflow-clip size-[24px]` : ["13", "14"].includes(variant) ? "h-[15px] w-[24px]" : "size-[20px]"}`} id={is20 ? "node-7838_21213" : is19 ? "node-7838_21210" : variant === "18" ? "node-7838_21200" : is17 ? "node-7838_21198" : is16 ? "node-7838_21195" : variant === "15" ? "node-7838_21188" : is14 ? "node-7838_21179" : is13 ? "node-7838_21176" : "node-7838_21073"}>
+      {["2", "13", "14", "17", "20"].includes(variant) && <img alt="" className="absolute block inset-0 max-w-none size-full" src={is20 ? imgVariant20 : is17 ? imgVariant17 : is14 ? imgVariant14 : is13 ? imgVariant13 : imgVariant2} />}
+      {["15", "16", "19"].includes(variant) && (
+        <div className="absolute contents inset-[0_2.95%_0_0]" id={is19 ? "node-7838_21209" : is16 ? "node-7838_21194" : "node-7838_21187"} data-name="Clip path group">
+          <div className={`${String.raw`absolute mask-alpha mask-intersect mask-no-clip mask-no-repeat opacity-[calc(var(--opacity\/100,100)/100)] `}${is19 ? "inset-[14.84%_2.95%_14.84%_0] mask-position-[0px_-2.375px] mask-size-[15.528px_16px]" : "inset-[0_2.95%_0_0] mask-size-[23.292px_24px]"}`} id={is19 ? "node-7838_21202" : is16 ? "node-7838_21190" : "node-7838_21181"} style={is19 ? { maskImage: `url("${imgGroup3}")` } : { maskImage: `url("${imgGroup}")` }} data-name="Group">
+            <img alt="" className="absolute block inset-0 max-w-none size-full" src={is19 ? imgGroup4 : is16 ? imgGroup2 : imgGroup1} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type Component2Props = {
+  className?: string;
+  variant?: "3";
+};
+
+function Component2({ className, variant = "3" }: Component2Props) {
+  return <div className={className || "h-[36px] opacity-[calc(var(--opacity\\/100,100)/100)] overflow-clip relative w-[45px]"} data-node-id="7837:18133" />;
+}
+
+export default function LandingPage() {
+  return (
+    <div className="content-stretch flex flex-col items-start relative size-full" data-node-id="7836:16138" data-name="Landing page">
+      <div className="bg-white content-stretch flex flex-col items-start relative shrink-0 w-[1440px]" data-node-id="7843:22400" data-name="header.MuiPaper-root">
+        <div className="content-stretch flex items-center justify-center min-h-[64px] px-[24px] relative shrink-0 w-full" data-node-id="7843:22401" data-name="div.MuiToolbar-root">
+          <div className="content-stretch flex items-center max-w-[1200px] px-[24px] relative shrink-0 w-[1200px]" data-node-id="7843:22402" data-development-annotations="header: atualização do logo (desktop e mobile)" data-name="div.MuiContainer-root">
+            <div className="h-[32px] relative shrink-0 w-[223.035px]" data-node-id="7944:371" data-name="logo">
+              <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgLogo} />
+            </div>
+            <div className="content-stretch flex flex-[1_0_0] gap-[var(--item-spacing\/32,32px)] items-start min-w-px pl-[32px] pr-[645.28px] relative" data-node-id="7843:22406" data-name="div.MuiBox-root">
+              <div className="content-stretch flex items-center justify-center min-h-[64px] min-w-[80px] pb-[21.8px] pt-[20.2px] px-[5px] relative shrink-0" data-node-id="7843:22407" data-name="a.MuiButtonBase-root">
+                <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[0px] text-black text-center whitespace-nowrap" data-node-id="7843:22408">
+                  <p className="font-['Manrope:Regular'] font-normal leading-[21.6px] text-[18px]">Nossos exames</p>
+                </div>
+              </div>
+              <div className="content-stretch flex items-center justify-center min-h-[64px] min-w-[80px] pb-[21.8px] pt-[20.2px] px-[5px] relative shrink-0" data-node-id="7843:22409" data-name="a.MuiButtonBase-root">
+                <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[length:var(--corner-radius\/18,18px)] text-black text-center whitespace-nowrap" data-node-id="7843:22410">
+                  <p className="leading-[var(--line-height\/21_6,21.6px)]">Resultados</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="content-stretch flex h-[540px] items-start justify-center relative shrink-0 w-[1440px]" data-node-id="7844:22445" style={{ backgroundImage: "linear-gradient(140.0300002945884deg, var(--color\\/rose\\/44,rgb(218, 7, 91)) 0%, var(--color\\/violet\\/51,rgb(119, 56, 206)) 100%)" }} data-name="div.css-352drl">
+        <div className="content-stretch flex flex-col gap-[var(--item-spacing\/l,48px)] h-full items-start max-w-[1200px] pt-[48px] px-[24px] relative shrink-0 w-[1200px]" data-node-id="7844:22446" data-name="div.MuiContainer-root">
+          <div className="content-center flex flex-wrap gap-0 items-center relative shrink-0 w-full" data-node-id="7844:22447" data-name="ol.MuiBreadcrumbs-ol">
+            <div className="content-stretch flex flex-col items-start pb-[3.09px] pt-[2.5px] relative shrink-0" data-node-id="7844:22448" data-name="li.MuiBreadcrumbs-li">
+              <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[length:var(--font-size\/14,14px)] text-white whitespace-nowrap" data-node-id="7844:22449">
+                <p className="leading-[var(--line-height\/16,16px)]">Home</p>
+              </div>
+            </div>
+            <div className="content-stretch flex flex-col items-start px-[8px] relative shrink-0" data-node-id="7844:22450" data-name="li.MuiBreadcrumbs-separator:margin">
+              <Component1 className="relative shrink-0 size-[20px]" />
+            </div>
+            <div className="content-stretch flex flex-col items-start pb-[3.09px] pt-[2.5px] relative shrink-0" data-node-id="7844:22452" data-name="li.MuiBreadcrumbs-li">
+              <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[length:var(--font-size\/14,14px)] text-white whitespace-nowrap" data-node-id="7844:22453">
+                <p className="leading-[var(--line-height\/16,16px)]">Exames</p>
+              </div>
+            </div>
+            <div className="content-stretch flex flex-col items-start px-[8px] relative shrink-0" data-node-id="7844:22454" data-name="li.MuiBreadcrumbs-separator:margin">
+              <Component1 className="relative shrink-0 size-[20px]" />
+            </div>
+            <div className="content-stretch flex flex-col items-start pb-[3.09px] pt-[2.5px] relative shrink-0" data-node-id="7844:22456" data-name="li.MuiBreadcrumbs-li">
+              <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[length:var(--font-size\/14,14px)] text-white whitespace-nowrap" data-node-id="7844:22457">
+                <p className="leading-[var(--line-height\/16,16px)]">FoundationOne®</p>
+              </div>
+            </div>
+          </div>
+          <div className="content-stretch flex flex-col gap-[32px] items-start max-w-[696px] relative shrink-0" data-node-id="7844:22458" data-name="div.css-1aqjoba">
+            <div className="content-stretch flex flex-col items-start relative shrink-0 w-[448px]" data-node-id="7844:22459" data-name="h3.MuiTypography-root">
+              <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[32px] text-white w-full" data-node-id="7844:22460">
+                <p className="leading-[var(--line-height\/42_56,42.56px)]">FoundationOne®</p>
+              </div>
+            </div>
+            <div className="content-stretch flex flex-col gap-[24px] items-start relative shrink-0" data-node-id="7856:22808">
+              <div className="[word-break:break-word] content-stretch flex flex-col gap-[12px] items-start leading-[0] relative shrink-0 text-white w-[448px]" data-node-id="7844:22461" data-name="p">
+                <div className="flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center relative shrink-0 text-[length:var(--line-height\/24,24px)] w-full" data-node-id="7844:22462">
+                  <p className="leading-[1.2]">Soluções para apoiar decisões terapêuticas mais precisas em casos de câncer.</p>
+                </div>
+                <div className="flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center relative shrink-0 text-[length:var(--corner-radius\/18,18px)] w-full" data-node-id="7853:22469">
+                  <p className="leading-[var(--line-height\/21_6,21.6px)]">{`Exames genômicos avançados que identificam alterações no DNA do tumor e ajudam a direcionar tratamentos personalizados para cada paciente. `}</p>
+                </div>
+              </div>
+              <div className="bg-[#e9f2eb] content-stretch flex h-[48px] items-center justify-center min-w-[64px] pl-[58.45px] pr-[58.47px] relative rounded-[8px] shrink-0" data-node-id="7944:444" data-development-annotations="hover desse botão a cor de fundo muda para a cor #FFFFFF" data-name="Component 10">
+                <div className="h-[21.59px] relative shrink-0 w-[86.42px]" data-node-id="7944:448" data-name="p.MuiTypography-root">
+                  <div className="-translate-x-1/2 -translate-y-1/2 [word-break:break-word] absolute flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] left-[calc(50%+1.29px)] text-[#435363] text-[17.7px] text-center top-[10px] whitespace-nowrap" data-node-id="7944:449">
+                    <p className="leading-[var(--line-height\/21_6,21.6px)]">Conheça os exames</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="absolute bottom-0 h-[302px] left-[336px] mix-blend-multiply w-[154px]" data-node-id="7844:22463" data-name="elemento-banner-2.png">
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+              <img alt="" className="absolute left-0 max-w-none size-full top-0" src={imgElementoBanner2Png} />
+            </div>
+          </div>
+          <div className="absolute bottom-0 h-[483px] left-[480px] mix-blend-overlay w-[772px]" data-node-id="7844:22464" data-name="todosexames1.png">
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+              <img alt="" className="absolute left-0 max-w-none size-full top-0" src={imgTodosexames1Png} />
+            </div>
+          </div>
+          <div className="absolute h-[320px] right-[50px] top-0 w-[138px]" data-node-id="7844:22465" data-name="eclipse.png">
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+              <img alt="" className="absolute left-0 max-w-none size-full top-0" src={imgEclipsePng} />
+            </div>
+          </div>
+          <div className="absolute flex inset-[83.7%_2.01%_8.89%_72.83%] items-center justify-center" data-node-id="7880:4469" style={{ containerType: "size" }}>
+            <div className="-rotate-180 -scale-x-100 flex-none h-[100cqh] w-[100cqw]">
+              <div className="relative size-full" data-name="logo">
+                <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgLogo1} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="bg-white content-stretch flex flex-col items-start justify-center px-[120px] py-[60px] relative shrink-0 w-full" data-node-id="7836:16574" data-name="content">
+        <div className="content-stretch flex flex-col gap-[32px] items-start px-[24px] relative shrink-0 w-full" data-node-id="7877:2081">
+          <div className="content-stretch flex flex-col items-start relative shrink-0 w-full" data-node-id="7862:1929" data-name="h4.MuiTypography-root">
+            <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[26px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] text-center whitespace-nowrap" data-node-id="7862:1930">
+              <p className="leading-[var(--line-height\/36,36px)]">Diferenciais</p>
+            </div>
+          </div>
+          <div className="[word-break:break-word] content-stretch flex gap-[24px] items-start relative shrink-0 w-full" data-node-id="7836:16609">
+            <div className="bg-[#f7f7f7] content-stretch flex flex-[1_0_0] flex-col gap-[16px] items-start min-w-px p-[16px] relative rounded-[12px]" data-node-id="7836:16610" data-name="Containter">
+              <div className="flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[#435363] text-[20px] text-center w-full" data-node-id="7836:16611">
+                <p className="leading-[var(--line-height\/26_6,26.6px)]">Medicina de precisão na prática</p>
+              </div>
+              <p className="font-[family-name:var(--font-family\/font-1,'Manrope:Regular')] font-[var(--font-weight\/400,400)] leading-[1.4] relative shrink-0 text-[#415454] text-[16px] w-full" data-node-id="7836:16612">
+                Identificação abrangente de alterações genômicas para apoiar a escolha de terapias mais assertivas.
+              </p>
+            </div>
+            <div className="bg-[#f7f7f7] content-stretch flex flex-[1_0_0] flex-col gap-[16px] items-start min-w-px p-[16px] relative rounded-[12px]" data-node-id="7836:16613" data-name="Containter">
+              <div className="flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[#435363] text-[20px] text-center w-full" data-node-id="7836:16614">
+                <p className="leading-[var(--line-height\/26_6,26.6px)]">Apoio à tomada de decisão terapêutica</p>
+              </div>
+              <p className="font-[family-name:var(--font-family\/font-1,'Manrope:Regular')] font-[var(--font-weight\/400,400)] leading-[1.4] relative shrink-0 text-[#415454] text-[16px] w-full" data-node-id="7836:16615">
+                Resultados integrados com evidência científica que auxiliam médicos na definição da melhor estratégia terapêutica.
+              </p>
+            </div>
+            <div className="bg-[#f7f7f7] content-stretch flex flex-[1_0_0] flex-col gap-[16px] items-start min-w-px p-[16px] relative rounded-[12px] self-stretch" data-node-id="7836:16616" data-name="Containter">
+              <div className="flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[#435363] text-[20px] text-center w-full" data-node-id="7836:16617">
+                <p className="leading-[var(--line-height\/26_6,26.6px)]">Relatório claro e profundo</p>
+              </div>
+              <p className="font-[family-name:var(--font-family\/font-1,'Manrope:Regular')] font-[var(--font-weight\/400,400)] leading-[1.4] relative shrink-0 text-[#415454] text-[16px] w-full" data-node-id="7836:16618">{`Laudos completos e detalhados com insights acionáveis para a rotina clínica. `}</p>
+            </div>
+            <div className="bg-[#f7f7f7] content-stretch flex flex-[1_0_0] flex-col gap-[16px] items-start min-w-px p-[16px] relative rounded-[12px]" data-node-id="7836:16619" data-name="Containter">
+              <div className="flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[#435363] text-[20px] text-center w-full" data-node-id="7836:16620">
+                <p className="leading-[var(--line-height\/26_6,26.6px)]">Expertise global com atuação local</p>
+              </div>
+              <p className="font-[family-name:var(--font-family\/font-1,'Manrope:Regular')] font-[var(--font-weight\/400,400)] leading-[1.4] relative shrink-0 text-[#415454] text-[16px] w-full" data-node-id="7836:16621">
+                Tecnologia Foundation Medicine com operação no Brasil via Grupo Fleury e suporte médico especializado.
+              </p>
+            </div>
+          </div>
+          <div className="content-stretch flex gap-[32px] items-center relative shrink-0 w-full" data-node-id="7836:16622">
+            <div className="content-stretch flex flex-[1_0_0] gap-[8px] items-center min-w-px relative" data-node-id="7836:16623">
+              <div className="bg-[#f7f7f7] overflow-clip relative rounded-[12px] shrink-0 size-[64px]" data-node-id="7886:2662">
+                <div className="absolute left-[12px] size-[40px] top-[12px]" data-node-id="7886:2663" data-name="icon">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgIcon} />
+                </div>
+              </div>
+              <div className="content-stretch flex flex-[1_0_0] flex-col gap-[4px] items-start min-w-px relative" data-node-id="7836:16630">
+                <div className="content-stretch flex items-center relative shrink-0 w-full" data-node-id="7836:16631">
+                  <div className="content-stretch flex items-center relative shrink-0" data-node-id="7836:16632">
+                    <div className="content-stretch flex items-start relative shrink-0" data-node-id="7836:16633" data-name="cards">
+                      <p className="[word-break:break-word] font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[normal] relative shrink-0 text-[#435363] text-[28px] whitespace-nowrap" data-node-id="7836:16634">
+                        +1,3 milhões
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="content-stretch flex items-start relative shrink-0 w-full" data-node-id="7836:16635">
+                  <p className="[word-break:break-word] flex-[1_0_0] font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[1.2] min-w-px relative text-[16px] text-black" data-node-id="7836:16636">
+                    Relatórios entregues globalmente
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="content-stretch flex flex-[1_0_0] gap-[8px] items-center min-w-px relative" data-node-id="7836:16637">
+              <div className="bg-[#f7f7f7] overflow-clip relative rounded-[12px] shrink-0 size-[64px]" data-node-id="7886:2666">
+                <div className="absolute contents inset-[17.97%_18.75%_19.53%_18.75%]" data-node-id="7886:2670" style={{ containerType: "size" }} data-name="icon">
+                  <div className="absolute contents inset-[17.97%_18.75%_19.53%_18.75%]" data-node-id="7886:2671" style={{ containerType: "size" }} data-name="g1688">
+                    <div className="absolute contents inset-[17.97%_18.75%_19.53%_18.75%]" data-node-id="7886:2672" style={{ containerType: "size" }} data-name="Clip path group">
+                      <div className="absolute contents inset-[20.46%_22.01%_21.75%_22.27%]" data-node-id="7886:2675" style={{ containerType: "size" }} data-name="g1690">
+                        <div className="absolute flex inset-[20.46%_22.01%_21.75%_22.27%] items-center justify-center" data-node-id="7886:2676" style={{ containerType: "size" }}>
+                          <div className="-rotate-180 -scale-x-100 flex-none h-[100cqh] w-[100cqw]">
+                            <div className="mask-alpha mask-intersect mask-no-clip mask-no-repeat mask-position-[-2.255px_-1.593px] mask-size-[40px_40px] relative size-full" style={{ maskImage: `url("${imgG1696}")` }} data-name="g1696">
+                              <div className="absolute inset-[-2.7%_-2.8%]">
+                                <img alt="" className="block max-w-none size-full" src={imgG1697} />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="content-stretch flex flex-[1_0_0] flex-col gap-[4px] items-start min-w-px relative" data-node-id="7836:16641">
+                <div className="content-stretch flex items-center relative shrink-0 w-full" data-node-id="7836:16642">
+                  <div className="content-stretch flex items-center relative shrink-0" data-node-id="7836:16643">
+                    <div className="content-stretch flex items-start relative shrink-0" data-node-id="7836:16644" data-name="cards">
+                      <p className="[word-break:break-word] font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[normal] relative shrink-0 text-[#435363] text-[28px] whitespace-nowrap" data-node-id="7836:16645">
+                        +25 mil
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="content-stretch flex items-start relative shrink-0 w-full" data-node-id="7836:16646">
+                  <p className="[word-break:break-word] flex-[1_0_0] font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[1.2] min-w-px relative text-[16px] text-black" data-node-id="7836:16647">
+                    Exames no Brasil
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="content-stretch flex flex-[1_0_0] gap-[8px] items-center min-w-px relative" data-node-id="7836:16648">
+              <div className="bg-[#f7f7f7] overflow-clip relative rounded-[12px] shrink-0 size-[64px]" data-node-id="7886:2679">
+                <div className="absolute left-[12px] size-[40px] top-[11.5px]" data-node-id="7886:2689" data-name="icon">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgIcon1} />
+                </div>
+              </div>
+              <div className="content-stretch flex flex-[1_0_0] flex-col gap-[4px] items-start min-w-px relative" data-node-id="7836:16651">
+                <div className="content-stretch flex items-center relative shrink-0 w-full" data-node-id="7836:16652">
+                  <div className="content-stretch flex items-center relative shrink-0" data-node-id="7836:16653">
+                    <div className="content-stretch flex items-start relative shrink-0" data-node-id="7836:16654" data-name="cards">
+                      <p className="[word-break:break-word] font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[normal] relative shrink-0 text-[#435363] text-[28px] whitespace-nowrap" data-node-id="7836:16655">
+                        +950
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="content-stretch flex items-start relative shrink-0 w-full" data-node-id="7836:16656">
+                  <p className="[word-break:break-word] flex-[1_0_0] font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[1.2] min-w-px relative text-[16px] text-black" data-node-id="7836:16657">{`Ensaios clínicos realizados `}</p>
+                </div>
+              </div>
+            </div>
+            <div className="content-stretch flex flex-[1_0_0] gap-[8px] items-center min-w-px relative" data-node-id="7836:16658">
+              <div className="bg-[#f7f7f7] overflow-clip relative rounded-[12px] shrink-0 size-[64px]" data-node-id="7886:2692">
+                <div className="absolute left-[12px] size-[40px] top-[12px]" data-node-id="7886:2696" data-name="icon">
+                  <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgIcon2} />
+                </div>
+              </div>
+              <div className="content-stretch flex flex-[1_0_0] flex-col gap-[4px] items-start min-w-px relative" data-node-id="7836:16661">
+                <div className="content-stretch flex items-center relative shrink-0 w-full" data-node-id="7836:16662">
+                  <div className="content-stretch flex items-center relative shrink-0" data-node-id="7836:16663">
+                    <div className="content-stretch flex items-start relative shrink-0" data-node-id="7836:16664" data-name="cards">
+                      <p className="[word-break:break-word] font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[normal] relative shrink-0 text-[#435363] text-[28px] whitespace-nowrap" data-node-id="7836:16665">
+                        94%
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="content-stretch flex items-start relative shrink-0 w-full" data-node-id="7836:16666">
+                  <p className="[word-break:break-word] flex-[1_0_0] font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[1.2] min-w-px relative text-[16px] text-black" data-node-id="7836:16667">{`Oncologistas no Brasil conhecem e aprovam `}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="bg-[#435363] content-stretch flex flex-col items-start justify-center overflow-clip px-[120px] py-[60px] relative shrink-0 w-full" data-node-id="7836:16668" data-name="Section-exames">
+        <div className="content-stretch flex flex-col isolate items-start justify-center px-[24px] relative shrink-0 w-full" data-node-id="7836:16669" data-name="content">
+          <div className="content-stretch flex flex-col gap-[32px] items-start relative shrink-0 w-full z-[1]" data-node-id="7836:16670" data-name="cards">
+            <div className="content-stretch flex flex-col items-start relative shrink-0 w-full" data-node-id="7836:16671">
+              <div className="content-stretch flex flex-col items-start justify-center relative rounded-tl-[24.089px] rounded-tr-[24.089px] shrink-0 w-full" data-node-id="7836:16672" data-name="topbar">
+                <div className="content-stretch flex items-center relative shrink-0" data-node-id="7836:16673" data-name="Filterbar">
+                  <p className="[word-break:break-word] font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[var(--line-height\/36,36px)] relative shrink-0 text-[26px] text-white whitespace-nowrap" data-node-id="7836:16674">
+                    Conheça os exames FoundationOne® e indicações
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="content-stretch flex flex-col gap-[24px] items-start relative shrink-0 w-full" data-node-id="7886:2699">
+              <div className="content-stretch flex gap-[24px] items-start relative shrink-0 w-full" data-node-id="7836:16675">
+                <div className="border-[#d63d00] border-[1.5px] border-solid content-stretch flex flex-[1_0_0] flex-col gap-[24px] items-start min-w-px p-[16px] relative rounded-[12px] self-stretch" data-node-id="7836:16676">
+                  <div className="content-stretch flex items-center justify-center relative shrink-0 w-full" data-node-id="7836:16677">
+                    <p className="[word-break:break-word] flex-[1_0_0] font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[1.2] min-w-px relative text-[length:var(--line-height\/24,24px)] text-center text-white" data-node-id="7836:16678">
+                      FoundationOne® CDx
+                    </p>
+                  </div>
+                  <p className="[word-break:break-word] font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[var(--line-height\/24,24px)] relative shrink-0 text-[18px] text-white w-full" data-node-id="7836:16679">
+                    Tumores sólidos - biópsia de tecido
+                  </p>
+                  <ul className="[word-break:break-word] block font-[family-name:var(--font-family\/font-1,'Manrope:Regular')] font-[var(--font-weight\/400,400)] leading-[0] list-disc relative shrink-0 text-[18px] text-white w-full" data-node-id="7836:16680">
+                    <li className="mb-[8px] ms-[27px]">
+                      <span className="leading-[var(--line-height\/24,24px)]">CE-IVD</span>
+                    </li>
+                    <li className="mb-[8px] ms-[27px]">
+                      <span className="leading-[var(--line-height\/24,24px)]">DNA (324 genes)</span>
+                    </li>
+                    <li className="mb-[8px] ms-[27px]">
+                      <span className="leading-[var(--line-height\/24,24px)]">TMB, MSI-H, HRDSIg pan-tumoral*</span>
+                    </li>
+                    <li className="mb-[8px] ms-[27px]">
+                      <span className="leading-[var(--line-height\/24,24px)]">Detecção robusta de fusões em DNA</span>
+                    </li>
+                    <li className="mb-[8px] ms-[27px]">
+                      <span className="leading-[var(--line-height\/24,24px)]">Mais de 570 tipos de câncer</span>
+                    </li>
+                    <li className="ms-[27px]">
+                      <span className="leading-[var(--line-height\/24,24px)]">Opção de teste semelhante em biópsia líquida</span>
+                    </li>
+                  </ul>
+                </div>
+                <div className="border-[#d63d00] border-[1.5px] border-solid content-stretch flex flex-[1_0_0] flex-col gap-[24px] items-start min-w-px p-[16px] relative rounded-[12px]" data-node-id="7836:16681">
+                  <div className="content-stretch flex items-center justify-center relative shrink-0 w-full" data-node-id="7836:16682">
+                    <p className="[word-break:break-word] flex-[1_0_0] font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[1.2] min-w-px relative text-[length:var(--line-height\/24,24px)] text-center text-white" data-node-id="7836:16683">
+                      FoundationOne® LIQUID CDx
+                    </p>
+                  </div>
+                  <p className="[word-break:break-word] font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[var(--line-height\/24,24px)] relative shrink-0 text-[18px] text-white w-full" data-node-id="7836:16684">
+                    Tumores sólidos - biópsia líquida
+                  </p>
+                  <div className="content-stretch flex items-start relative shrink-0 w-full" data-node-id="7836:16685">
+                    <ul className="[word-break:break-word] block flex-[1_0_0] font-[family-name:var(--font-family\/font-1,'Manrope:Regular')] font-[var(--font-weight\/400,400)] leading-[0] list-disc min-w-px relative text-[18px] text-white" data-node-id="7836:16686">
+                      <li className="mb-[8px] ms-[27px]">
+                        <span className="leading-[var(--line-height\/24,24px)]">CE-IVD</span>
+                      </li>
+                      <li className="mb-[8px] ms-[27px]">
+                        <span className="leading-[var(--line-height\/24,24px)]">DNA (324 genes)</span>
+                      </li>
+                      <li className="mb-[8px] ms-[27px]">
+                        <span className="leading-[var(--line-height\/24,24px)]">bTMB, MSI-H, Fração Tumoral de ctDNA*</span>
+                      </li>
+                      <li className="mb-[8px] ms-[27px]">
+                        <span className="leading-[var(--line-height\/24,24px)]">Detecção robusta de fusões em DNA</span>
+                      </li>
+                      <li className="mb-[8px] ms-[27px]">
+                        <span className="leading-[var(--line-height\/24,24px)]">Concordância de cerca de 100% com a biópsia de tecido para alterações driver quando FT ctDNA ≥ 1%*</span>
+                      </li>
+                      <li className="ms-[27px]">
+                        <span className="leading-[var(--line-height\/24,24px)]">Opção de teste semelhante em biópsia de tecido</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+                <div className="border-[#d63d00] border-[1.5px] border-solid content-stretch flex flex-[1_0_0] flex-col gap-[24px] items-start min-w-px p-[16px] relative rounded-[12px] self-stretch" data-node-id="7836:16687">
+                  <div className="content-stretch flex items-center justify-center relative shrink-0 w-full" data-node-id="7836:16688">
+                    <p className="[word-break:break-word] flex-[1_0_0] font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[1.2] min-w-px relative text-[length:var(--line-height\/24,24px)] text-center text-white" data-node-id="7836:16689">
+                      FoundationOne® HEME
+                    </p>
+                  </div>
+                  <p className="[word-break:break-word] font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[var(--line-height\/24,24px)] relative shrink-0 text-[18px] text-white w-full" data-node-id="7836:16690">
+                    Tumores hematológicos e sarcomas
+                  </p>
+                  <div className="content-stretch flex items-start relative shrink-0 w-full" data-node-id="7836:16691">
+                    <ul className="[word-break:break-word] block flex-[1_0_0] font-[family-name:var(--font-family\/font-1,'Manrope:Regular')] font-[var(--font-weight\/400,400)] leading-[0] list-disc min-w-px relative text-[18px] text-white" data-node-id="7836:16692">
+                      <li className="mb-[8px] ms-[27px]">
+                        <span className="leading-[var(--line-height\/24,24px)]">DNA (406 genes) + RNA (265 genes) para tumores hematológicos, sarcomas ou tumores sólidos onde o sequenciamento de RNA é necessário</span>
+                      </li>
+                      <li className="mb-[8px] ms-[27px]">
+                        <span className="leading-[var(--line-height\/24,24px)]">TMB, MSI</span>
+                      </li>
+                      <li className="ms-[27px]">
+                        <span className="leading-[var(--line-height\/24,24px)]">Tecido FFPE</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              <p className="[word-break:break-word] font-[family-name:var(--font-family\/font-3,'Manrope:Regular')] font-[var(--font-weight\/400,400)] leading-[22px] relative shrink-0 text-[#dbe4dd] text-[length:var(--font-size\/14,14px)] w-full" data-node-id="7836:16693">
+                *TMB: carga mutacional do tumor; bTMB: carga mutacional do tumor em sangue; MSI-H: Instabilidade de Microssatélites Alta; HRDsig: Assinatura de Deficiência de Recombinação Homóloga; ctDNA: DNA Tumoral Circulante; FT: fração tumoral.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="bg-white content-stretch flex flex-col items-start justify-center px-[120px] py-[60px] relative shrink-0 w-full" data-node-id="7836:16694" data-name="content">
+        <div className="content-stretch flex flex-col gap-[32px] items-start px-[24px] relative shrink-0 w-full" data-node-id="7880:4413">
+          <div className="content-stretch flex flex-col items-start relative shrink-0 w-full" data-node-id="7880:4410" data-name="h4.MuiTypography-root">
+            <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[26px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] text-center whitespace-nowrap" data-node-id="7880:4411">
+              <p className="leading-[var(--line-height\/36,36px)]">Como ter acesso aos testes FoundationOne®?</p>
+            </div>
+          </div>
+          <div className="content-stretch flex flex-col gap-[24px] items-start relative shrink-0 w-full" data-node-id="7886:2700">
+            <div className="content-stretch flex items-start relative shrink-0 w-full" data-node-id="7836:16701">
+              <p className="[word-break:break-word] flex-[1_0_0] font-[family-name:var(--font-family\/font-1,'Manrope:Regular')] font-[var(--font-weight\/400,400)] leading-[var(--line-height\/24,24px)] min-w-px relative text-[#474747] text-[18px]" data-node-id="7836:16702">
+                Os exames FoundationOne® estão disponíveis por meio de diferentes jornadas, de acordo com o seu perfil. Entenda como acessar o teste de forma simples e segura.
+              </p>
+            </div>
+            <div className="content-stretch flex gap-[24px] items-start relative shrink-0 w-full" data-node-id="7836:16703" data-name="row">
+              <div className="bg-white content-stretch drop-shadow-[0px_3px_1.5px_rgba(0,0,0,0.16),0px_3px_2px_rgba(0,0,0,0.1),0px_1px_4px_rgba(0,0,0,0.1)] flex flex-[1_0_0] items-start min-w-px p-[20px] relative rounded-[12px] self-stretch" data-node-id="7836:16704" data-development-annotations="no hover desse card, tem um leve zoom, comportamento similar existente nos cards da home do site ([https://www.fleurygenomica.com.br/](https://www.fleurygenomica.com.br/))" data-name="Card">
+                <div className="content-stretch flex flex-[1_0_0] flex-col gap-[24px] h-full items-start min-w-px overflow-clip relative" data-node-id="I7836:16704;7428:13428" data-name="content">
+                  <div className="aspect-[373.3333435058594/220] content-stretch flex items-start justify-center overflow-clip relative rounded-[16px] shrink-0 w-full" data-node-id="I7836:16704;7428:13429" data-name="Image">
+                    <div className="aspect-[373.3333435058594/220] flex-[1_0_0] min-w-px relative" data-node-id="I7836:16704;7428:13430" data-name="national-cancer-institute-PP5nO5gcLdA-unsplash">
+                      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                        <img alt="" className="absolute h-[102.72%] left-[-7.61%] max-w-none top-0 w-[107.61%]" src={imgNationalCancerInstitutePp5NO5GcLdAUnsplash} />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="content-stretch flex flex-[1_0_0] flex-col gap-[24px] items-start min-h-px relative w-full" data-node-id="I7836:16704;7428:13431">
+                    <div className="[word-break:break-word] content-stretch flex flex-col gap-[8px] items-start justify-center relative shrink-0 w-full" data-node-id="I7836:16704;7428:13432" data-name="Title">
+                      <p className="font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[var(--line-height\/24,24px)] relative shrink-0 text-[18px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="I7836:16704;7428:13433">
+                        Para médicos
+                      </p>
+                      <p className="font-[family-name:var(--font-family\/font-1,'Manrope:Regular')] font-[var(--font-weight\/400,400)] leading-[1.4] relative shrink-0 text-[16px] text-[color:var(--color\/grey\/35,#595959)] w-full" data-node-id="I7836:16704;7428:13434">{`Saiba como solicitar os exames, acessar suporte médico especializado e integrar a medicina de precisão à sua prática clínica. `}</p>
+                    </div>
+                  </div>
+                  <div className="content-stretch flex gap-[8px] items-center relative shrink-0 w-full" data-node-id="I7836:16704;7428:13451" data-name="Buttons">
+                    <div className="content-stretch flex items-center relative shrink-0" data-node-id="I7836:16704;7547:2908" data-name="text">
+                      <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[#e7004c] text-[16px] whitespace-nowrap" data-node-id="I7836:16704;7428:13454" data-development-annotations="hover desse botão segue o comportamento existente, muda para a cor #C40041">
+                        <p className="leading-[1.2]">{`Fale com nosso time de atendimento `}</p>
+                      </div>
+                    </div>
+                    <div className="relative shrink-0 size-[16px]" data-node-id="I7836:16704;7885:2479" data-name="icon">
+                      <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgIcon3} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white content-stretch drop-shadow-[0px_3px_1.5px_rgba(0,0,0,0.16),0px_3px_2px_rgba(0,0,0,0.1),0px_1px_4px_rgba(0,0,0,0.1)] flex flex-[1_0_0] items-start min-w-px p-[20px] relative rounded-[12px] self-stretch" data-node-id="7836:16705" data-name="Card">
+                <div className="content-stretch flex flex-[1_0_0] flex-col gap-[24px] h-full items-start min-w-px overflow-clip relative" data-node-id="I7836:16705;7428:13428" data-name="content">
+                  <div className="aspect-[373.3333435058594/220] content-stretch flex items-start justify-center overflow-clip relative rounded-[16px] shrink-0 w-full" data-node-id="I7836:16705;7428:13429" data-name="Image">
+                    <div className="aspect-[373.3333435058594/220] flex-[1_0_0] min-w-px relative" data-node-id="I7836:16705;7428:13430" data-name="national-cancer-institute-PP5nO5gcLdA-unsplash">
+                      <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgNationalCancerInstitutePp5NO5GcLdAUnsplash1} />
+                    </div>
+                  </div>
+                  <div className="content-stretch flex flex-[1_0_0] flex-col gap-[24px] items-start min-h-px relative w-full" data-node-id="I7836:16705;7428:13431">
+                    <div className="[word-break:break-word] content-stretch flex flex-col gap-[8px] items-start justify-center relative shrink-0 w-full" data-node-id="I7836:16705;7428:13432" data-name="Title">
+                      <p className="font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[var(--line-height\/24,24px)] relative shrink-0 text-[18px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="I7836:16705;7428:13433">
+                        Para pacientes
+                      </p>
+                      <p className="font-[family-name:var(--font-family\/font-1,'Manrope:Regular')] font-[var(--font-weight\/400,400)] leading-[1.4] relative shrink-0 text-[16px] text-[color:var(--color\/grey\/35,#595959)] w-full" data-node-id="I7836:16705;7428:13434">
+                        Descubra como realizar o exame, entender cada etapa do processo e obter apoio ao longo da jornada.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="content-stretch flex gap-[8px] items-center relative shrink-0 w-full" data-node-id="I7836:16705;7428:13451" data-name="Buttons">
+                    <div className="content-stretch flex items-center relative shrink-0" data-node-id="I7836:16705;7547:2908" data-name="text">
+                      <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[#e7004c] text-[16px] whitespace-nowrap" data-node-id="I7836:16705;7428:13454">
+                        <p className="leading-[1.2]">{`Fale com nosso time de atendimento `}</p>
+                      </div>
+                    </div>
+                    <div className="relative shrink-0 size-[16px]" data-node-id="I7836:16705;7885:2479" data-name="icon">
+                      <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgIcon3} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white content-stretch drop-shadow-[0px_3px_1.5px_rgba(0,0,0,0.16),0px_3px_2px_rgba(0,0,0,0.1),0px_1px_4px_rgba(0,0,0,0.1)] flex flex-[1_0_0] items-center min-w-px p-[20px] relative rounded-[12px]" data-node-id="7836:16706" data-name="Card">
+                <div className="content-stretch flex flex-[1_0_0] flex-col gap-[24px] items-start justify-center min-w-px overflow-clip relative" data-node-id="I7836:16706;7428:13428" data-name="content">
+                  <div className="aspect-[373.3333435058594/220] content-stretch flex items-start justify-center overflow-clip relative rounded-[16px] shrink-0 w-full" data-node-id="I7836:16706;7428:13429" data-name="Image">
+                    <div className="aspect-[373.3333435058594/220] flex-[1_0_0] min-w-px relative" data-node-id="I7836:16706;7428:13430" data-name="national-cancer-institute-PP5nO5gcLdA-unsplash">
+                      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                        <img alt="" className="absolute h-[117.9%] left-[-4.09%] max-w-none top-[-8.45%] w-[104.09%]" src={imgNationalCancerInstitutePp5NO5GcLdAUnsplash2} />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="content-stretch flex flex-col gap-[24px] items-start relative shrink-0 w-full" data-node-id="I7836:16706;7428:13431">
+                    <div className="[word-break:break-word] content-stretch flex flex-col gap-[8px] items-start justify-center relative shrink-0 w-full" data-node-id="I7836:16706;7428:13432" data-name="Title">
+                      <p className="font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] leading-[var(--line-height\/24,24px)] relative shrink-0 text-[18px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="I7836:16706;7428:13433">{`Para laboratórios `}</p>
+                      <p className="font-[family-name:var(--font-family\/font-1,'Manrope:Regular')] font-[var(--font-weight\/400,400)] leading-[1.4] relative shrink-0 text-[16px] text-[color:var(--color\/grey\/35,#595959)] w-full" data-node-id="I7836:16706;7428:13434">{`Amplie seu portfólio com o apoio do Lab-to-Lab Pardini e ofereça FoundationOne® aos seus clientes. `}</p>
+                    </div>
+                  </div>
+                  <div className="content-stretch flex gap-[8px] items-center relative shrink-0 w-full" data-node-id="I7836:16706;7428:13451" data-name="Buttons">
+                    <div className="content-stretch flex flex-[1_0_0] items-center min-w-px relative" data-node-id="I7836:16706;7547:2908" data-name="text">
+                      <div className="[word-break:break-word] flex flex-[1_0_0] flex-col font-[family-name:var(--font-family\/font-1,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] min-w-px relative text-[#e7004c] text-[16px]" data-node-id="I7836:16706;7428:13454">
+                        <p className="leading-[1.2]">{`Cadastre seu laboratório ou entre em contato com um executivo de vendas `}</p>
+                      </div>
+                    </div>
+                    <div className="relative shrink-0 size-[16px]" data-node-id="I7836:16706;7885:2479" data-name="icon">
+                      <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgIcon3} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="bg-white content-stretch flex flex-col items-start justify-center px-[120px] py-[60px] relative shrink-0 w-full" data-node-id="7881:4525" data-name="content">
+        <div className="content-stretch flex flex-col items-start px-[24px] relative shrink-0 w-full" data-node-id="7881:4526">
+          <div className="bg-[var(--color\/white\/-0_2\%,rgba(255,255,255,0))] content-stretch flex flex-col gap-[32px] items-start p-[32px] relative rounded-[var(--corner-radius\/12,12px)] shadow-[0px_0px_32px_0px_rgba(48,13,117,0.1)] shrink-0 w-[1152px]" data-node-id="7881:4529" data-name="div.css-cy69qc">
+            <div className="content-stretch flex flex-col items-center relative shrink-0 w-full" data-node-id="7881:4530" data-name="h4.MuiTypography-root">
+              <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[26px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] text-center whitespace-nowrap" data-node-id="7881:4531">
+                <p className="leading-[var(--line-height\/36,36px)]">Perguntas frequentes</p>
+              </div>
+            </div>
+            <div className="content-stretch flex flex-col gap-[var(--item-spacing\/32,32px)] items-start relative shrink-0 w-full" data-node-id="7881:4532" data-name="div.css-1j0jd85">
+              <div className="content-stretch flex flex-col items-start relative shrink-0 w-full" data-node-id="7881:4605">
+                <div className="border-[length:var(--stroke-weight\/1,1px)] border-[var(--color\/grey\/94,#ebe0ff)] border-solid content-stretch flex flex-col items-start relative rounded-tl-[var(--corner-radius\/12,12px)] rounded-tr-[var(--corner-radius\/12,12px)] shadow-[0px_0px_32px_0px_rgba(48,13,117,0.1)] shrink-0 w-full" data-node-id="7881:4533" data-name="div.MuiPaper-root">
+                  <div className="content-stretch flex items-center justify-center min-h-[48px] px-[16px] relative shrink-0 w-full" data-node-id="7881:4534" data-name="div.MuiButtonBase-root">
+                    <div className="content-stretch flex flex-[1_0_0] flex-col items-start min-w-px py-[12px] relative" data-node-id="7881:4535" data-name="div.MuiAccordionSummary-content:margin">
+                      <div className="content-stretch flex items-start py-[10px] relative shrink-0 w-full" data-node-id="7881:4536" data-name="div.MuiAccordionSummary-content">
+                        <div className="content-stretch flex flex-[1_0_0] flex-col items-start min-w-px relative self-stretch" data-node-id="7881:4537" data-name="h5.MuiTypography-root">
+                          <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] text-[length:var(--font-size\/20,20px)] w-full" data-node-id="7881:4538">
+                            <p className="leading-[var(--line-height\/26_6,26.6px)]">O que é o FoundationOne®?</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-center relative shrink-0" data-node-id="7881:4539">
+                      <div className="flex-none rotate-180">
+                        <div className="content-stretch flex items-start relative" data-name="div.MuiAccordionSummary-expandIconWrapper">
+                          <div className="content-stretch flex flex-col items-start overflow-clip relative self-stretch shrink-0" data-node-id="7881:4540" data-name="span">
+                            <div className="content-stretch flex flex-col items-center justify-center overflow-clip relative shrink-0" data-node-id="7881:4541" data-name="image">
+                              <Component2 className="h-[36px] opacity-[calc(var(--opacity\/100,100)/100)] relative shrink-0 w-[45px]" />
+                            </div>
+                            <div className="-translate-x-1/2 -translate-y-1/2 absolute h-[36px] left-1/2 max-h-[900px] max-w-[1440px] min-h-[36px] min-w-[45px] top-1/2 w-[45px]" data-node-id="7881:4543" data-name="image">
+                              <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                                <img alt="" className="absolute left-0 max-w-none size-full top-0" src={imgImage} />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white border-[var(--color\/grey\/94,#ebe0ff)] border-b-[length:var(--stroke-weight\/1,1px)] border-l-[length:var(--stroke-weight\/1,1px)] border-r-[length:var(--stroke-weight\/1,1px)] border-solid content-stretch drop-shadow-[0px_0px_16px_rgba(48,13,117,0.1)] flex flex-col items-start relative rounded-bl-[var(--corner-radius\/12,12px)] rounded-br-[var(--corner-radius\/12,12px)] shrink-0 w-full" data-node-id="7881:4593" data-name="div.MuiPaper-root">
+                  <div className="content-stretch flex items-center justify-center min-h-[48px] px-[16px] relative shrink-0 w-full" data-node-id="7881:4594" data-name="div.MuiButtonBase-root">
+                    <div className="content-stretch flex flex-[1_0_0] flex-col items-start min-w-px py-[12px] relative" data-node-id="7881:4595" data-name="div.MuiAccordionSummary-content:margin">
+                      <div className="content-stretch flex items-start py-[10px] relative shrink-0 w-full" data-node-id="7881:4596" data-name="div.MuiAccordionSummary-content">
+                        <div className="content-stretch flex flex-[1_0_0] flex-col items-start min-w-px relative self-stretch" data-node-id="7881:4597" data-name="h5.MuiTypography-root">
+                          <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-1,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[16px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="7881:4598">
+                            <p className="leading-[1.4]">{`FoundationOne® é um conjunto de exames genômicos que analisam o perfil molecular do tumor para identificar alterações que podem orientar decisões terapêuticas mais personalizadas. `}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white border-[length:var(--stroke-weight\/1,1px)] border-[var(--color\/grey\/94,#ebe0ff)] border-solid content-stretch drop-shadow-[0px_0px_16px_rgba(48,13,117,0.1)] flex flex-col items-start relative rounded-[var(--corner-radius\/12,12px)] shrink-0 w-full" data-node-id="7881:4544" data-name="div.MuiPaper-root">
+                <div className="content-stretch flex items-center justify-center min-h-[48px] px-[16px] relative shrink-0 w-full" data-node-id="7881:4546" data-name="div.MuiButtonBase-root">
+                  <div className="content-stretch flex flex-[1_0_0] flex-col items-start min-w-px py-[12px] relative" data-node-id="7881:4547" data-name="div.MuiAccordionSummary-content:margin">
+                    <div className="content-stretch flex items-start py-[10px] relative shrink-0 w-full" data-node-id="7881:4548" data-name="div.MuiAccordionSummary-content">
+                      <div className="content-stretch flex flex-[1_0_0] flex-col items-start min-w-px relative self-stretch" data-node-id="7881:4549" data-name="h5.MuiTypography-root">
+                        <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[20px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="7881:4550">
+                          <p className="leading-[var(--line-height\/26_6,26.6px)]">{`O que diferencia a Foundation Medicine de outros provedores? `}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="content-stretch flex items-start relative shrink-0" data-node-id="7881:4551" data-name="div.MuiAccordionSummary-expandIconWrapper">
+                    <div className="content-stretch flex flex-col items-start overflow-clip relative self-stretch shrink-0" data-node-id="7881:4552" data-name="span">
+                      <div className="content-stretch flex flex-col items-center justify-center overflow-clip relative shrink-0" data-node-id="7881:4553" data-name="image">
+                        <Component2 className="h-[36px] opacity-[calc(var(--opacity\/100,100)/100)] relative shrink-0 w-[45px]" />
+                      </div>
+                      <div className="-translate-x-1/2 -translate-y-1/2 absolute h-[36px] left-1/2 max-h-[900px] max-w-[1440px] min-h-[36px] min-w-[45px] top-1/2 w-[45px]" data-node-id="7881:4555" data-name="image">
+                        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                          <img alt="" className="absolute left-0 max-w-none size-full top-0" src={imgImage} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white border-[length:var(--stroke-weight\/1,1px)] border-[var(--color\/grey\/94,#ebe0ff)] border-solid content-stretch drop-shadow-[0px_0px_16px_rgba(48,13,117,0.1)] flex flex-col items-start relative rounded-[var(--corner-radius\/12,12px)] shrink-0 w-full" data-node-id="7881:4556" data-name="div.MuiPaper-root">
+                <div className="content-stretch flex items-center justify-center min-h-[48px] px-[16px] relative shrink-0 w-full" data-node-id="7881:4558" data-name="div.MuiButtonBase-root">
+                  <div className="content-stretch flex flex-[1_0_0] flex-col items-start min-w-px py-[12px] relative" data-node-id="7881:4559" data-name="div.MuiAccordionSummary-content:margin">
+                    <div className="content-stretch flex items-start py-[10px] relative shrink-0 w-full" data-node-id="7881:4560" data-name="div.MuiAccordionSummary-content">
+                      <div className="content-stretch flex flex-[1_0_0] flex-col items-start min-w-px relative self-stretch" data-node-id="7881:4561" data-name="h5.MuiTypography-root">
+                        <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] text-[length:var(--font-size\/20,20px)] w-full" data-node-id="7881:4562">
+                          <p className="leading-[var(--line-height\/26_6,26.6px)]">Quais pacientes podem se beneficiar desses exames?</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="content-stretch flex items-start relative shrink-0" data-node-id="7881:4563" data-name="div.MuiAccordionSummary-expandIconWrapper">
+                    <div className="content-stretch flex flex-col items-start overflow-clip relative self-stretch shrink-0" data-node-id="7881:4564" data-name="span">
+                      <div className="content-stretch flex flex-col items-center justify-center overflow-clip relative shrink-0" data-node-id="7881:4565" data-name="image">
+                        <Component2 className="h-[36px] opacity-[calc(var(--opacity\/100,100)/100)] relative shrink-0 w-[45px]" />
+                      </div>
+                      <div className="-translate-x-1/2 -translate-y-1/2 absolute h-[36px] left-1/2 max-h-[900px] max-w-[1440px] min-h-[36px] min-w-[45px] top-1/2 w-[45px]" data-node-id="7881:4567" data-name="image">
+                        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                          <img alt="" className="absolute left-0 max-w-none size-full top-0" src={imgImage} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white border-[length:var(--stroke-weight\/1,1px)] border-[var(--color\/grey\/94,#ebe0ff)] border-solid content-stretch drop-shadow-[0px_0px_16px_rgba(48,13,117,0.1)] flex flex-col items-start relative rounded-[var(--corner-radius\/12,12px)] shrink-0 w-full" data-node-id="7881:4568" data-name="div.MuiPaper-root">
+                <div className="content-stretch flex items-center justify-center min-h-[48px] px-[16px] relative shrink-0 w-full" data-node-id="7881:4570" data-name="div.MuiButtonBase-root">
+                  <div className="content-stretch flex flex-[1_0_0] flex-col items-start min-w-px py-[12px] relative" data-node-id="7881:4571" data-name="div.MuiAccordionSummary-content:margin">
+                    <div className="content-stretch flex items-start py-[10px] relative shrink-0 w-full" data-node-id="7881:4572" data-name="div.MuiAccordionSummary-content">
+                      <div className="content-stretch flex flex-[1_0_0] flex-col items-start min-w-px relative self-stretch" data-node-id="7881:4573" data-name="h5.MuiTypography-root">
+                        <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[20px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="7881:4574">
+                          <p className="leading-[var(--line-height\/26_6,26.6px)]">{`Qual a diferença entre os exames FoundationOne® (CDx, Liquid CDx e Heme)? `}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="content-stretch flex items-start relative shrink-0" data-node-id="7881:4575" data-name="div.MuiAccordionSummary-expandIconWrapper">
+                    <div className="content-stretch flex flex-col items-start overflow-clip relative self-stretch shrink-0" data-node-id="7881:4576" data-name="span">
+                      <div className="content-stretch flex flex-col items-center justify-center overflow-clip relative shrink-0" data-node-id="7881:4577" data-name="image">
+                        <Component2 className="h-[36px] opacity-[calc(var(--opacity\/100,100)/100)] relative shrink-0 w-[45px]" />
+                      </div>
+                      <div className="-translate-x-1/2 -translate-y-1/2 absolute h-[36px] left-1/2 max-h-[900px] max-w-[1440px] min-h-[36px] min-w-[45px] top-1/2 w-[45px]" data-node-id="7881:4579" data-name="image">
+                        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                          <img alt="" className="absolute left-0 max-w-none size-full top-0" src={imgImage} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white border-[length:var(--stroke-weight\/1,1px)] border-[var(--color\/grey\/94,#ebe0ff)] border-solid content-stretch drop-shadow-[0px_0px_16px_rgba(48,13,117,0.1)] flex flex-col items-start relative rounded-[var(--corner-radius\/12,12px)] shrink-0 w-full" data-node-id="7881:4580" data-name="div.MuiPaper-root">
+                <div className="content-stretch flex items-center justify-center min-h-[48px] px-[16px] relative shrink-0 w-full" data-node-id="7881:4582" data-name="div.MuiButtonBase-root">
+                  <div className="content-stretch flex flex-[1_0_0] flex-col items-start min-w-px py-[12px] relative" data-node-id="7881:4583" data-name="div.MuiAccordionSummary-content:margin">
+                    <div className="content-stretch flex items-start py-[10px] relative shrink-0 w-full" data-node-id="7881:4584" data-name="div.MuiAccordionSummary-content">
+                      <div className="content-stretch flex flex-[1_0_0] flex-col items-start min-w-px relative self-stretch" data-node-id="7881:4585" data-name="h5.MuiTypography-root">
+                        <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[20px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="7881:4586">
+                          <p className="leading-[var(--line-height\/26_6,26.6px)]">Como realizar o exame FoundationOne®?</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="content-stretch flex items-start relative shrink-0" data-node-id="7881:4587" data-name="div.MuiAccordionSummary-expandIconWrapper">
+                    <div className="content-stretch flex flex-col items-start overflow-clip relative self-stretch shrink-0" data-node-id="7881:4588" data-name="span">
+                      <div className="content-stretch flex flex-col items-center justify-center overflow-clip relative shrink-0" data-node-id="7881:4589" data-name="image">
+                        <Component2 className="h-[36px] opacity-[calc(var(--opacity\/100,100)/100)] relative shrink-0 w-[45px]" />
+                      </div>
+                      <div className="-translate-x-1/2 -translate-y-1/2 absolute h-[36px] left-1/2 max-h-[900px] max-w-[1440px] min-h-[36px] min-w-[45px] top-1/2 w-[45px]" data-node-id="7881:4591" data-name="image">
+                        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                          <img alt="" className="absolute left-0 max-w-none size-full top-0" src={imgImage} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="bg-white content-stretch flex flex-col items-center overflow-clip px-[120px] py-[60px] relative shrink-0 w-[1440px]" data-node-id="7853:22761">
+        <div className="content-stretch flex flex-col items-start px-[24px] relative shrink-0 w-full" data-node-id="7880:4409" data-development-annotations="seção existente no site, manter o mesmo comportamento de hover dos botões">
+          <div className="bg-gradient-to-b content-stretch flex from-[var(--color\/violet\/39-30\%,rgba(73,18,181,0.3))] h-[502px] items-center pb-[42.44px] pl-[15px] pr-[571.66px] pt-[165.42px] relative rounded-br-[var(--radius\/300,300px)] rounded-tl-[var(--radius\/120,120px)] rounded-tr-[var(--radius\/300,300px)] shrink-0 to-[var(--color\/rose\/47-30\%,rgba(234,5,81,0.3))] w-full" data-node-id="7853:22762" data-name="div.css-7mgqbo">
+            <div className="absolute content-stretch flex flex-col items-start left-[41.02%] mix-blend-overlay pb-[7.59px] right-[14.07%] top-[20px]" data-node-id="7853:22763" data-name="div.css-1w54azy">
+              <div className="h-[482px] max-w-[539px] relative shrink-0 w-[539px]" data-node-id="7853:22764" data-name="two-peoples.png">
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                  <img alt="" className="absolute left-0 max-w-none size-full top-0" src={imgTwoPeoplesPng} />
+                </div>
+              </div>
+            </div>
+            <div className="border-[length:var(--stroke-weight\/3,3px)] border-[var(--color\/white\/-30\%,rgba(255,255,255,0.3))] border-solid h-[294.14px] relative rounded-[var(--corner-radius\/12,12px)] shrink-0 w-[613.34px]" data-node-id="7853:22765" style={{ backgroundImage: "url(\"data:image/svg+xml;utf8,<svg viewBox='0 0 613.34 294.14' xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none'><rect x='0' y='0' height='100%' width='100%' fill='url(%23grad)' opacity='1'/><defs><radialGradient id='grad' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='10' gradientTransform='matrix(61.334 0 0 92.425 0 8.1771)'><stop stop-color='rgba(255,255,255,0.49)' offset='0'/><stop stop-color='rgba(255,255,255,0.07)' offset='1'/></radialGradient></defs></svg>\")" }} data-name="div.MuiBox-root">
+              <div className="absolute content-stretch flex flex-col items-center left-[185px] px-[51.39px] top-[24px]" data-node-id="7853:22766" data-name="h3.MuiTypography-root">
+                <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] text-[length:var(--font-size\/32,32px)] text-center whitespace-nowrap" data-node-id="7853:22767">
+                  <p className="leading-[var(--line-height\/42_56,42.56px)]">Dúvidas?</p>
+                </div>
+              </div>
+              <div className="absolute content-stretch flex flex-col items-center left-[185px] pl-[59.44px] pr-[59.45px] top-[66.55px]" data-node-id="7853:22768" data-name="p.MuiTypography-root">
+                <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] text-[length:var(--line-height\/16,16px)] text-center whitespace-nowrap" data-node-id="7853:22769">
+                  <p className="leading-[normal]">Vamos te ajudar!</p>
+                </div>
+              </div>
+              <div className="absolute content-stretch flex flex-col items-center left-[185px] top-[82.55px]" data-node-id="7853:22770" data-name="p.MuiTypography-root">
+                <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] text-[length:var(--line-height\/16,16px)] text-center whitespace-nowrap" data-node-id="7853:22771">
+                  <p className="leading-[normal]">Entre em contato pelo WhatsApp</p>
+                </div>
+              </div>
+              <div className="absolute content-stretch flex flex-col items-center left-[185px] pl-[93.45px] pr-[93.47px] top-[178.55px]" data-node-id="7853:22772" data-name="p.MuiTypography-root">
+                <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] text-[length:var(--font-size\/14,14px)] text-center whitespace-nowrap" data-node-id="7853:22773">
+                  <p className="leading-[var(--line-height\/16,16px)]">ou ligue</p>
+                </div>
+              </div>
+              <div className="absolute bg-[#e7004c] content-stretch flex h-[48px] items-center justify-center left-[185px] min-w-[64px] pl-[58.45px] pr-[58.47px] rounded-[8px] top-[114.55px]" data-node-id="7853:22774" data-name="Component 7">
+                <div className="content-stretch flex flex-col h-[24px] items-start pr-[8px] relative shrink-0 w-[34px]" data-node-id="I7853:22774;7838:21362" data-name="div.css-19jfexr:margin">
+                  <div className="bg-[var(--color\/rose\/72-30\%,rgba(255,113,159,0.3))] content-stretch flex flex-col h-[24px] items-start p-[2px] relative rounded-[var(--corner-radius\/12_5,12.5px)] shrink-0 w-[26px]" data-node-id="I7853:22774;7838:21363" data-name="div.css-19jfexr">
+                    <Component1 className="h-[15px] relative shrink-0 w-[24px]" variant="13" />
+                  </div>
+                </div>
+                <div className="h-[21.59px] relative shrink-0 w-[86.42px]" data-node-id="I7853:22774;7838:21366" data-name="p.MuiTypography-root">
+                  <div className="-translate-x-1/2 -translate-y-1/2 [word-break:break-word] absolute flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] left-[calc(50%+0.79px)] text-[17.7px] text-center text-white top-[10px] whitespace-nowrap" data-node-id="I7853:22774;7838:21367">
+                    <p className="leading-[var(--line-height\/21_6,21.6px)]">WhatsApp</p>
+                  </div>
+                </div>
+              </div>
+              <div className="-translate-x-1/2 absolute bg-[#e7004c] border-[length:var(--stroke-weight\/1,1px)] border-solid border-white content-stretch flex items-center justify-center left-1/2 min-w-[64px] pl-[54.11px] pr-[54.1px] py-[11px] rounded-[8px] top-[216.14px]" data-node-id="7853:22775" data-name="Component 8">
+                <div className="content-stretch flex flex-col h-[24px] items-start pr-[8px] relative shrink-0 w-[34px]" data-node-id="I7853:22775;7838:21376" data-name="div.css-19jfexr:margin">
+                  <div className="bg-[var(--color\/rose\/72-30\%,rgba(255,113,159,0.3))] content-stretch flex flex-col h-[24px] items-start p-[2px] relative rounded-[var(--corner-radius\/12_5,12.5px)] shrink-0 w-[26px]" data-node-id="I7853:22775;7838:21377" data-name="div.css-19jfexr">
+                    <Component1 className="h-[15px] relative shrink-0 w-[24px]" variant="14" />
+                  </div>
+                </div>
+                <div className="h-[21.59px] relative shrink-0 w-[93.13px]" data-node-id="I7853:22775;7838:21380" data-name="p.MuiTypography-root">
+                  <div className="-translate-x-1/2 -translate-y-1/2 [word-break:break-word] absolute flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] left-[calc(50%-1.06px)] text-[length:var(--line-height\/18,18px)] text-center text-white top-[10px] whitespace-nowrap" data-node-id="I7853:22775;7838:21381">
+                    <p className="leading-[var(--line-height\/21_6,21.6px)]">3003-5001</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="bg-white content-stretch flex flex-col items-center overflow-clip px-[120px] relative shrink-0 w-[1440px]" data-node-id="7853:22629" data-name="footer">
+        <div className="content-stretch flex flex-col items-start max-w-[1200px] pt-[100px] px-[24px] relative shrink-0 w-full" data-node-id="7853:22630" data-name="div.MuiContainer-root">
+          <div className="content-stretch flex flex-col items-center relative shrink-0 w-full" data-node-id="7853:22631" data-name="div.css-bmmhi4:margin:align-center">
+            <div className="content-stretch flex flex-col items-center py-[15px] relative shrink-0 w-full" data-node-id="7853:22632" data-name="div.css-bmmhi4:margin">
+              <div className="content-stretch flex gap-[var(--item-spacing\/149_8,149.8px)] items-start relative shrink-0 w-full" data-node-id="7853:22633" data-name="div.css-bmmhi4">
+                <div className="content-stretch flex flex-col items-start py-[15px] relative self-stretch shrink-0" data-node-id="7853:22634" data-name="div.css-128gqdl">
+                  <div className="content-stretch flex flex-col items-start relative shrink-0" data-node-id="7853:22635" data-name="div.css-tb36im">
+                    <div className="content-stretch flex flex-col items-start py-[5px] relative shrink-0 w-full" data-node-id="7853:22636" data-development-annotations="footer: atualização do logo (desktop e mobile)" data-name="a.css-5snrr8:margin">
+                      <div className="h-[32px] relative shrink-0 w-[223.035px]" data-node-id="7944:390" data-name="logo">
+                        <img alt="" className="absolute block inset-0 max-w-none size-full" src={imgLogo} />
+                      </div>
+                    </div>
+                    <div className="content-stretch flex flex-col items-start pb-[40px] pt-[16px] relative shrink-0 w-full" data-node-id="7853:22640" data-name="p.MuiTypography-root:margin">
+                      <div className="content-stretch flex flex-col items-start relative shrink-0 w-full" data-node-id="7853:22641" data-name="p.MuiTypography-root">
+                        <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] font-[var(--font-weight\/700,700)] justify-center leading-[0] relative shrink-0 text-[14.5px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="7853:22642">
+                          <p className="leading-[var(--line-height\/18,18px)]">A gente cuida, você confia</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="content-stretch flex flex-col items-start py-[5px] relative shrink-0 w-full" data-node-id="7853:22643" data-name="div.css-gtcjle:margin">
+                      <div className="content-stretch flex gap-[var(--item-spacing\/xs,8px)] items-end pb-[7.59px] relative shrink-0 w-full" data-node-id="7853:22644" data-name="div.css-gtcjle">
+                        <div className="aspect-[24/24] content-stretch flex items-center justify-center overflow-clip relative shrink-0" data-node-id="7853:22645" data-name="Instagram">
+                          <Component1 className="opacity-[calc(var(--opacity\/100,100)/100)] overflow-clip relative shrink-0 size-[24px]" variant="15" />
+                        </div>
+                        <div className="aspect-[24/24] content-stretch flex items-center justify-center overflow-clip relative shrink-0" data-node-id="7853:22647" data-name="Facebook">
+                          <Component1 className="opacity-[calc(var(--opacity\/100,100)/100)] overflow-clip relative shrink-0 size-[24px]" variant="16" />
+                        </div>
+                        <div className="aspect-[24/16.5] content-stretch flex items-center justify-center overflow-clip relative shrink-0" data-node-id="7853:22649" data-name="Youtube">
+                          <Component1 className="h-[16.5px] opacity-[calc(var(--opacity\/100,100)/100)] relative shrink-0 w-[24px]" variant="17" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="content-stretch flex flex-col items-start justify-center pt-[48px] relative self-stretch shrink-0" data-node-id="7853:22651" data-name="div.css-ngrmx6:margin">
+                  <div className="content-stretch flex flex-[1_0_0] flex-col items-start min-h-px relative" data-node-id="7853:22652" data-name="div.css-ngrmx6">
+                    <div className="content-stretch flex flex-col items-start relative shrink-0 w-[110.23px]" data-node-id="7853:22653" data-name="div.css-tb36im">
+                      <div className="content-stretch flex flex-col items-start py-[5px] relative shrink-0 w-full" data-node-id="7853:22654" data-name="a.css-5snrr8:margin">
+                        <div className="content-stretch flex flex-col items-start relative shrink-0 w-full" data-node-id="7853:22655" data-name="p.MuiTypography-root">
+                          <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[11.3px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="7853:22656">
+                            <p className="leading-[var(--line-height\/13_5,13.5px)]">Perguntas Frequentes</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="content-stretch flex flex-col items-start py-[5px] relative shrink-0 w-full" data-node-id="7853:22657" data-name="a.css-5snrr8:margin">
+                        <div className="content-stretch flex flex-col items-start relative shrink-0 w-full" data-node-id="7853:22658" data-name="p.MuiTypography-root">
+                          <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[11.3px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="7853:22659">
+                            <p className="leading-[var(--line-height\/13_5,13.5px)]">Resultados</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="content-stretch flex flex-col items-start py-[5px] relative shrink-0 w-full" data-node-id="7853:22660" data-name="a.css-5snrr8:margin">
+                        <div className="content-stretch flex flex-col items-start relative shrink-0 w-full" data-node-id="7853:22661" data-name="p.MuiTypography-root">
+                          <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[0px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="7853:22662">
+                            <p className="font-['Manrope:Regular'] font-normal leading-[13.5px] text-[11.3px]">Exames</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="content-stretch flex flex-col items-start justify-center pt-[48px] relative self-stretch shrink-0" data-node-id="7853:22663" data-name="div.css-ngrmx6:margin">
+                  <div className="content-stretch flex flex-[1_0_0] flex-col items-start min-h-px relative" data-node-id="7853:22664" data-name="div.css-ngrmx6">
+                    <div className="content-stretch flex items-start relative shrink-0" data-node-id="7853:22665" data-name="div.css-12tho0i">
+                      <div className="content-stretch flex flex-col items-start relative self-stretch shrink-0 w-[219.89px]" data-node-id="7853:22666" data-name="div.css-tb36im">
+                        <div className="content-stretch flex flex-col items-start pl-[40px] py-[5px] relative shrink-0 w-full" data-node-id="7853:22667" data-name="div.css-13pzpk0:margin">
+                          <div className="content-stretch flex gap-[var(--item-spacing\/-0_01,0px)] isolate items-start relative shrink-0 w-full" data-node-id="7853:22668" data-name="div.css-13pzpk0">
+                            <div className="content-stretch flex flex-col items-start max-w-[180.69000244140625px] mr-[-0.01px] pr-[0.8px] relative shrink-0 z-[2]" data-node-id="7853:22669" data-name="span:margin">
+                              <div className="content-stretch flex flex-col items-start max-w-[179.88999938964844px] overflow-clip pr-[0.8px] relative shrink-0" data-node-id="7853:22670" data-name="span">
+                                <div className="content-stretch flex flex-col items-center justify-center overflow-clip relative shrink-0" data-node-id="7853:22671" data-name="image">
+                                  <Component1 className="opacity-[calc(var(--opacity\/100,100)/100)] relative shrink-0 size-[16px]" variant="18" />
+                                </div>
+                                <div className="-translate-x-1/2 -translate-y-1/2 absolute content-stretch flex flex-col h-[16px] items-center justify-center left-1/2 max-h-[900px] max-w-[1440px] min-h-[16px] min-w-[16.799999237060547px] overflow-clip top-1/2 w-[16.8px]" data-node-id="7853:22673" data-name="mail">
+                                  <Component1 className="opacity-[calc(var(--opacity\/100,100)/100)] overflow-clip relative shrink-0 size-[16px]" variant="19" />
+                                </div>
+                              </div>
+                            </div>
+                            <div className="content-stretch flex flex-col items-start px-[2px] relative shrink-0 z-[1]" data-node-id="7853:22675" data-name="a.css-5snrr8:margin">
+                              <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[11.3px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] whitespace-nowrap" data-node-id="7853:22676">
+                                <p className="leading-[var(--line-height\/13_5,13.5px)]">genomica@grupofleury.com.br</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="content-stretch flex flex-col items-start pl-[40px] py-[5px] relative shrink-0 w-full" data-node-id="7853:22677" data-name="div.css-13pzpk0:margin">
+                          <div className="content-stretch flex gap-[var(--item-spacing\/-0_01,0px)] isolate items-start relative shrink-0 w-full" data-node-id="7853:22678" data-name="div.css-13pzpk0">
+                            <div className="content-stretch flex flex-col items-start max-w-[180.69000244140625px] mr-[-0.01px] pr-[0.8px] relative shrink-0 z-[2]" data-node-id="7853:22679" data-name="span:margin">
+                              <div className="content-stretch flex flex-col items-start max-w-[179.88999938964844px] overflow-clip pr-[0.8px] relative shrink-0" data-node-id="7853:22680" data-name="span">
+                                <div className="content-stretch flex flex-col items-center justify-center overflow-clip relative shrink-0" data-node-id="7853:22681" data-name="image">
+                                  <Component1 className="opacity-[calc(var(--opacity\/100,100)/100)] relative shrink-0 size-[16px]" variant="18" />
+                                </div>
+                                <div className="-translate-x-1/2 -translate-y-1/2 absolute content-stretch flex flex-col h-[16px] items-center justify-center left-1/2 max-h-[900px] max-w-[1440px] min-h-[16px] min-w-[16.799999237060547px] overflow-clip top-1/2 w-[16.8px]" data-node-id="7853:22683" data-name="phone">
+                                  <Component1 className="opacity-[calc(var(--opacity\/100,100)/100)] relative shrink-0 size-[16px]" variant="20" />
+                                </div>
+                              </div>
+                            </div>
+                            <div className="content-stretch flex flex-col items-start px-[2px] relative shrink-0 z-[1]" data-node-id="7853:22685" data-name="a.css-5snrr8:margin">
+                              <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[11.3px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] whitespace-nowrap" data-node-id="7853:22686">
+                                <p className="leading-[var(--line-height\/13_5,13.5px)]">3003-5001</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="content-stretch flex flex-col items-start relative self-stretch shrink-0 w-[281.59px]" data-node-id="7853:22687" data-name="div.css-tb36im">
+                        <div className="content-stretch flex flex-col items-start pl-[150px] py-[5px] relative shrink-0 w-full" data-node-id="7853:22688" data-name="div.links-privacy:margin">
+                          <div className="content-stretch flex flex-col items-start pl-[2px] pr-[23.59px] relative shrink-0 w-full" data-node-id="7853:22689" data-name="div.links-privacy">
+                            <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[11.3px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="7853:22690">
+                              <p className="leading-[var(--line-height\/13_5,13.5px)]">Portal de Privacidade</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="content-stretch flex flex-col items-start pl-[150px] py-[5px] relative shrink-0 w-full" data-node-id="7853:22691" data-name="div.links-privacy:margin">
+                          <div className="content-stretch flex flex-col items-start pl-[2px] pr-[17.25px] relative shrink-0 w-full" data-node-id="7853:22692" data-name="div.links-privacy">
+                            <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[11.3px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="7853:22693">
+                              <p className="leading-[var(--line-height\/13_5,13.5px)]">Política de Pagamento</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="content-stretch flex flex-col items-start pl-[150px] py-[5px] relative shrink-0 w-full" data-node-id="7853:22694" data-name="div.links-privacy:margin">
+                          <div className="content-stretch flex flex-col items-start px-[2px] relative shrink-0 w-full" data-node-id="7853:22695" data-name="div.links-privacy">
+                            <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[11.3px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="7853:22696">
+                              <p className="leading-[var(--line-height\/13_5,13.5px)]">Política de Cancelamento</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="content-stretch flex flex-col items-start pl-[150px] py-[5px] relative shrink-0 w-full" data-node-id="7853:22697" data-name="div.links-privacy:margin">
+                          <div className="content-stretch flex flex-col items-start pl-[2px] pr-[86.7px] relative shrink-0 w-full" data-node-id="7853:22698" data-name="div.links-privacy">
+                            <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[11.3px] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))] w-full" data-node-id="7853:22699">
+                              <p className="leading-[var(--line-height\/13_5,13.5px)]">Amostra</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="border-[var(--color\/black\/-12\%,rgba(0,0,0,0.12))] border-b-[length:var(--stroke-weight\/1,1px)] border-solid h-px relative shrink-0 w-full" data-node-id="7853:22700" data-name="hr.MuiDivider-root" />
+          <div className="content-stretch flex items-start justify-center py-[15px] relative shrink-0 w-full" data-node-id="7853:22701" data-name="div.css-4oez8">
+            <div className="content-stretch flex flex-col items-center relative self-stretch shrink-0" data-node-id="7853:22702" data-name="span.MuiTypography-root">
+              <div className="[word-break:break-word] flex flex-col font-[family-name:var(--font-family\/font-2,'Manrope:Regular')] font-[var(--font-weight\/400,400)] justify-center leading-[0] relative shrink-0 text-[color:var(--color\/grey\/59,#969696)] text-[length:var(--font-size\/14,14px)] text-center whitespace-nowrap" data-node-id="7853:22703">
+                <p className="leading-[var(--line-height\/16,16px)]">© 2024 Genômica - Todos os Direitos Reservados</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
