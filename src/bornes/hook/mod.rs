@@ -1,3 +1,4 @@
+pub mod figma;
 pub mod image;
 
 use crate::bornes::mcp::compress;
@@ -74,6 +75,21 @@ fn transform(input: &Value, max_edge: u32, store: impl Fn(&str) -> String) -> Op
 
     let mut out = response.clone();
     let mut changed = false;
+
+    // Figma `get_design_context`: domain-specific trimming BEFORE the generic
+    // MCP compactor, so the compactor sees already-shorter text blocks.
+    if figma::is_design_context(tool) {
+        let blocks = match &mut out {
+            Value::Array(b) => Some(b.as_mut_slice()),
+            Value::Object(o) => o.get_mut("content").and_then(Value::as_array_mut).map(|a| a.as_mut_slice()),
+            _ => None,
+        };
+        if let Some(blocks) = blocks
+            && figma::trim_content_blocks(blocks)
+        {
+            changed = true;
+        }
+    }
 
     // MCP text results: the same mechanical JSON compaction the stdio proxy
     // applies (nulls, long strings, big arrays — never file-reading tools).
@@ -432,5 +448,50 @@ mod tests {
         ]}});
         assert!(remove_ours(&mut s));
         assert!(s["hooks"]["PostToolUse"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn figma_get_design_context_is_trimmed() {
+        stats_off();
+        let code = r#"<div data-node-id="1:2" data-name="Landing page" className="flex gap-[var(--item-spacing\/32,32px)] font-[family-name:var(--font-family\/font-2,'Manrope:Bold')] text-[color:var(--color\/black\/-87\%,rgba(0,0,0,0.87))]"><span data-node-id="3:4" data-name="Title">Hello</span></div>"#;
+        let input = json!({
+            "tool_name": "mcp__figma__get_design_context",
+            "tool_response": [
+                {"type": "text", "text": code},
+                {"type": "text", "text": "SUPER CRITICAL: instructions..."},
+            ],
+        });
+        let out = transform(&input, 1280, |_| "h".into()).unwrap();
+        let trimmed = out[0]["text"].as_str().unwrap();
+        // data-name removed
+        assert!(!trimmed.contains("data-name"), "data-name should be stripped");
+        // data-node-id preserved
+        assert!(trimmed.contains(r#"data-node-id="1:2""#));
+        assert!(trimmed.contains(r#"data-node-id="3:4""#));
+        // var() resolved to fallback
+        assert!(trimmed.contains("gap-[32px]"));
+        assert!(trimmed.contains("font-[family-name:'Manrope:Bold']"));
+        assert!(trimmed.contains("text-[color:rgba(0,0,0,0.87)]"));
+        // className preserved
+        assert!(trimmed.contains("className="));
+        // Shorter than original
+        assert!(trimmed.len() < code.len());
+    }
+
+    #[test]
+    fn figma_get_metadata_is_not_trimmed_by_figma_filter() {
+        stats_off();
+        let code_with_data_name = r#"<div data-name="X">ok</div>"#;
+        let input = json!({
+            "tool_name": "mcp__figma__get_metadata",
+            "tool_response": [{"type": "text", "text": code_with_data_name}],
+        });
+        // get_metadata doesn't go through the figma trimmer, only generic MCP
+        let result = transform(&input, 1280, |_| "h".into());
+        if let Some(out) = &result {
+            let text = out[0]["text"].as_str().unwrap_or("");
+            // data-name should still be there (figma trimmer only runs on get_design_context)
+            assert!(text.contains("data-name") || text == code_with_data_name);
+        }
     }
 }
