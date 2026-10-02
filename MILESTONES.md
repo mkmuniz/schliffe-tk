@@ -237,16 +237,26 @@ Validated on the dev machine (macOS arm64, isolated `$HOME`): one-command piped 
 - **Done when:** a fresh macOS user without Rust installs with one command in under 30 seconds.
 - **Depends on:** M9 (a release with binaries).
 
-### M12 — Figma `get_design_context` trimming (measure first)
+### M12 — Figma `get_design_context` trimming ✅ (done 2026-10-02)
 
 - **Goal:** cut noise from the largest single MCP payload seen in real use (~974k tokens in a week, ~23k per call) without changing the design information.
-- **Requirements:**
-  - **Measure first:** capture real responses (with the user's permission, from their own files) and quantify each candidate: `data-name` layer names, repeated boilerplate instructions, redundant attributes.
-  - Only lossless-for-implementation cuts: never classes, never `data-node-id` (used to drill into child nodes), never annotations, never asset URLs.
-  - Applied in the PostToolUse hook, only for Figma's `get_design_context`; recoverable via `schliffe show`.
-- **Development requirements:** fixtures from real responses; a test that the trimmed code still contains every class, node id, text and asset reference of the original.
-- **Done when:** measured saving is reported; implemented only if ≥10% per call.
-- **Needs from the user:** a couple of real Figma frames to measure on.
+- **Measured on a real FoundationOne frame** (97,459 chars / ~24k tokens):
+
+| Category | Size | % of payload |
+|---|---|---|
+| className attributes (Tailwind) | 50,974 B | 52% — **kept** |
+| Arbitrary class values (var refs) | 23,342 B | 24% — var() resolved to fallback |
+| data-node-id | 8,441 B | 8% — **kept** |
+| data-name (layer names) | 5,792 B | 5% — **removed** |
+| Asset URLs | 2,666 B | 2% — **kept** |
+| Instruction blocks | 2,243 B | 2% — kept |
+
+- **Two lossless-for-implementation cuts** applied in the PostToolUse hook, only for `mcp__figma__get_design_context`:
+  1. **Strip `data-name` attributes** (−5%): Figma layer names ("image", "p.MuiTypography-root") carry no implementation information.
+  2. **Resolve `var()` to fallback** (−7%): `font-[family-name:var(--font-family/font-2,'Manrope:Bold')]` → `font-[family-name:'Manrope:Bold']`. The agent converts to the target design system; only the concrete value matters.
+- **Result: −13% per call** (97,459 → ~84,000 chars). Above the 10% threshold.
+- **Invariants verified on the real fixture:** every `data-node-id`, every `className`, every asset URL preserved; className count unchanged.
+- **Implementation:** `src/bornes/hook/figma.rs` — two regexes (`LazyLock`), applied before the generic MCP compactor. 14 tests (9 unit + 3 real-fixture + 2 integration).
 
 ### M13 — New filters guided by clean `stats`
 
