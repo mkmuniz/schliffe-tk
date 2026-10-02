@@ -81,7 +81,10 @@ fn transform(input: &Value, max_edge: u32, store: impl Fn(&str) -> String) -> Op
     if figma::is_design_context(tool) {
         let blocks = match &mut out {
             Value::Array(b) => Some(b.as_mut_slice()),
-            Value::Object(o) => o.get_mut("content").and_then(Value::as_array_mut).map(|a| a.as_mut_slice()),
+            Value::Object(o) => o
+                .get_mut("content")
+                .and_then(Value::as_array_mut)
+                .map(|a| a.as_mut_slice()),
             _ => None,
         };
         if let Some(blocks) = blocks
@@ -464,7 +467,10 @@ mod tests {
         let out = transform(&input, 1280, |_| "h".into()).unwrap();
         let trimmed = out[0]["text"].as_str().unwrap();
         // data-name removed
-        assert!(!trimmed.contains("data-name"), "data-name should be stripped");
+        assert!(
+            !trimmed.contains("data-name"),
+            "data-name should be stripped"
+        );
         // data-node-id preserved
         assert!(trimmed.contains(r#"data-node-id="1:2""#));
         assert!(trimmed.contains(r#"data-node-id="3:4""#));

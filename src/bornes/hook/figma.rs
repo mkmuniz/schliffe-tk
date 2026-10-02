@@ -123,7 +123,10 @@ mod tests {
         let t = blocks[0]["text"].as_str().unwrap();
         assert!(!t.contains("data-name"));
         // Instruction block untouched (no data-name, no var)
-        assert_eq!(blocks[1]["text"].as_str().unwrap(), "plain instruction text");
+        assert_eq!(
+            blocks[1]["text"].as_str().unwrap(),
+            "plain instruction text"
+        );
     }
 
     #[test]
@@ -151,30 +154,43 @@ mod tests {
         let code = include_str!("../../../tests/fixtures/figma-design-context.txt");
         let trimmed = trim_code(code);
         assert!(!trimmed.contains("data-name="), "data-name should be gone");
-        let orig_node_ids: Vec<&str> =
-            regex::Regex::new(r#"data-node-id="[^"]*""#).unwrap()
-                .find_iter(code).map(|m| m.as_str()).collect();
+        let orig_node_ids: Vec<&str> = regex::Regex::new(r#"data-node-id="[^"]*""#)
+            .unwrap()
+            .find_iter(code)
+            .map(|m| m.as_str())
+            .collect();
         for nid in &orig_node_ids {
             assert!(trimmed.contains(nid), "lost node id: {nid}");
         }
-        let orig_classnames: Vec<&str> =
-            regex::Regex::new(r#"className="[^"]*""#).unwrap()
-                .find_iter(code).map(|m| m.as_str()).collect();
+        let orig_classnames: Vec<&str> = regex::Regex::new(r#"className="[^"]*""#)
+            .unwrap()
+            .find_iter(code)
+            .map(|m| m.as_str())
+            .collect();
         // Same count of className attributes
-        let trimmed_classnames: Vec<&str> =
-            regex::Regex::new(r#"className="[^"]*""#).unwrap()
-                .find_iter(&trimmed).map(|m| m.as_str()).collect();
-        assert_eq!(orig_classnames.len(), trimmed_classnames.len(),
-            "className count changed: {} → {}", orig_classnames.len(), trimmed_classnames.len());
+        let trimmed_classnames: Vec<&str> = regex::Regex::new(r#"className="[^"]*""#)
+            .unwrap()
+            .find_iter(&trimmed)
+            .map(|m| m.as_str())
+            .collect();
+        assert_eq!(
+            orig_classnames.len(),
+            trimmed_classnames.len(),
+            "className count changed: {} → {}",
+            orig_classnames.len(),
+            trimmed_classnames.len()
+        );
     }
 
     #[test]
     fn real_payload_keeps_asset_urls() {
         let code = include_str!("../../../tests/fixtures/figma-design-context.txt");
         let trimmed = trim_code(code);
-        let urls: Vec<&str> =
-            regex::Regex::new(r#"https://www\.figma\.com/api/mcp/asset/[^"]*"#).unwrap()
-                .find_iter(code).map(|m| m.as_str()).collect();
+        let urls: Vec<&str> = regex::Regex::new(r#"https://www\.figma\.com/api/mcp/asset/[^"]*"#)
+            .unwrap()
+            .find_iter(code)
+            .map(|m| m.as_str())
+            .collect();
         assert!(!urls.is_empty());
         for url in &urls {
             assert!(trimmed.contains(url), "lost asset URL: {url}");
