@@ -292,7 +292,7 @@ Found and fixed: arbitrary file read through `schliffe show` (path traversal, re
 
 Tooling added: `cargo audit` (0 advisories over 60 dependencies), `cargo deny` with a policy that bans unneeded network clients, scripting and dynamic-loading crates, while explicitly allowing the Rustls-based HTTP client required by remote MCP; licence and registry allow-lists; `gitleaks`; and a check that every `unsafe` carries a `SAFETY:` comment (two sites, both reviewed). `SECURITY.md` documents the threat model, each fix, and the residual risks.
 
-### M15 — OAuth for remote MCP
+### M15 — OAuth for remote MCP ✅ (done 2026-10-02, merged in PR #7)
 
 - **Goal:** let a user connect to protected Streamable HTTP MCP servers without manually copying bearer tokens into command arguments.
 - **Requirements:** follow MCP OAuth discovery through Protected Resource Metadata and Authorization Server Metadata; use Authorization Code + PKCE S256; prefer Client ID Metadata Documents and retain Dynamic Client Registration only for compatible legacy servers; validate issuer, redirect URI, state and PKCE before accepting a callback; retry a request once after a successful authorization; support refresh-token renewal without printing tokens.
