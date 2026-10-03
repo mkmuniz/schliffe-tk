@@ -258,12 +258,31 @@ Validated on the dev machine (macOS arm64, isolated `$HOME`): one-command piped 
 - **Invariants verified on the real fixture:** every `data-node-id`, every `className`, every asset URL preserved; className count unchanged.
 - **Implementation:** `src/bornes/hook/figma.rs` — two regexes (`LazyLock`), applied before the generic MCP compactor. 14 tests (9 unit + 3 real-fixture + 2 integration).
 
-### M13 — New filters guided by clean `stats`
+### M13 — New filters guided by clean `stats` ✅ (done 2026-10-02)
 
 - **Goal:** cover the commands that actually produce large output for the model, now that `stats` only counts the model's commands.
 - **Requirements:** after a few days of normal use, rank "passed through with no filter" by output size (not only count); write a filter only where output is large and mostly noise; each filter with a real captured fixture and the usual rules (no inflation, fail-open, errors kept).
 - **Done when:** the top 3 large unfiltered commands (if any) have filters, or it's documented that none are worth one.
 - **Depends on:** a few days of real usage data.
+
+**Analysis (10,774 commands, 812 filtered):** the top 5 unfiltered commands by
+count are all small output — none qualifies as "large":
+
+| Command | Count | Output (bytes) | Action |
+|---------|------:|---------------:|--------|
+| `git` (bare/global flags) | 4,282 | 2,161 (help) / 35 (`--version`) | too small, mixed bag |
+| `docker context` | 4,197 | 365 | too small |
+| `git add` | 197 | ~24 | write command, no output |
+| `git commit` | 183 | ~271 | write command, minimal output |
+| `git status` (with flags) | 164 | 21–73 | **bug fix: filter was too strict** |
+
+**Bug fixed:** `git status` filter required `rest_args.len() == 1` (bare only).
+Agent calls with `-s`, `--short`, `--porcelain`, `-uno`, etc. bypassed filtering
+entirely (164 observed vs 15 filtered). Now accepts any flags but still excludes
+path arguments (which would widen the porcelain query).
+
+**Conclusion:** no new filters needed — the existing coverage already handles
+every command that produces large output. The only gap was a match-guard bug.
 
 ### M14 — Security hardening ✅ (done 2026-09-28)
 
