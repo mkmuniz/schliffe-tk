@@ -35,6 +35,7 @@ Every item here comes from a gap already recorded in `KNOWN_ISSUES.md` (which ex
 - [x] Remote MCP servers (HTTP/OAuth, e.g. Figma) — covered by the Claude Code `PostToolUse` hook (`bornes/hook`, 2026-09-25) instead of a proxy: Claude Code keeps doing OAuth, Schliffe rewrites the result. macOS/Linux/WSL only.
 - [x] Images (MCP screenshots, Read on PNG/JPEG) shrunk to a 1280px long edge by the same hook.
 - [x] Figma `get_design_context` trimming (M12, 2026-10-02): strip `data-name` attributes (−5%) and resolve CSS `var()` to fallbacks (−7%) = −13% per call. Verified lossless on a real FoundationOne frame (97k chars). All `data-node-id`, `className` and asset URLs preserved.
+- [x] Complete Streamable HTTP lifecycle (M16, 2026-10-02): proper SSE event framing, standalone GET stream for server-initiated messages with auto-reconnect (`Last-Event-ID`), `MCP-Protocol-Version` header, clean shutdown on client EOF. E2e fixture in `tests/mcp_http.rs`.
 - [ ] Confirm the exact shape of Claude Code's Read result for images on a live session (undocumented; the hook detects base64 image data generically — check `schliffe stats` shows `image (Read)` after reading a large screenshot).
 - [ ] Field pruning by semantic relevance (pagination, HATEOAS links, redundant timestamps) — today only the 3 mechanical techniques (null-strip, truncation, array cap).
 - [ ] Handle/compress requests initiated by the MCP server itself (e.g. `sampling/createMessage`) — pass straight through today.

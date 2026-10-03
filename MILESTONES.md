@@ -281,8 +281,17 @@ Tooling added: `cargo audit` (0 advisories over 60 dependencies), `cargo deny` w
 - **Tests:** local OAuth fixture covering discovery, PKCE mismatch, issuer mismatch, expired access token, refresh, token redaction and a successful retry. No real account or credential belongs in the repository.
 - **Done when:** a protected test MCP server can be connected through `schliffe mcp --oauth --url ...`, the token survives a restart securely, and `cargo deny`, `cargo audit`, `cargo clippy` and `cargo test` pass.
 
-### M16 — Complete Streamable HTTP lifecycle
+### M16 — Complete Streamable HTTP lifecycle ✅ (done 2026-10-02)
 
 - **Goal:** support server-initiated messages and long-lived event streams without bypassing Schliffe's filtering or security limits.
 - **Requirements:** preserve request/response correlation, validate the MCP method headers when present, bound each event and the number of pending requests, forward client answers unchanged, and apply transformations only to known `tools/list` and `tools/call` responses.
 - **Done when:** a local HTTP fixture exercises notifications, server requests, SSE events, reconnect behavior and shutdown without hangs or semantic changes.
+
+**Delivered:**
+
+- **Proper SSE framing** — a WHATWG `text/event-stream` push parser replaces the old `strip_prefix("data:")`-per-line scan, which split a multi-line `data:` field (spec-joined with `\n`) into fragments that each failed to parse as JSON. Handles event boundaries, CRLF, comments and `id:`.
+- **Standalone GET SSE stream** — after `initialize` negotiates a version, a detached thread opens the server→client stream, forwarding requests/notifications through the same transforms as a POST response (correlation shared via `ProxyState`). Auto-reconnects (exponential backoff capped at 30s, resuming with `Last-Event-ID`); stops cleanly on 405/non-SSE.
+- **`MCP-Protocol-Version` header** — latched from the `initialize` result and echoed on every later request (`HttpSession`).
+- **Clean shutdown** — the GET thread is never joined, so client EOF exits the process without waiting on an open stream.
+- **Bounds preserved** — 64 MiB per event, 1024 pending requests, transforms only on tracked `tools/list`/`tools/call`.
+- **Tests** — `tests/mcp_http.rs` drives the compiled proxy against a dependency-free HTTP/1.1 fixture covering all five lifecycle behaviors; SSE parser and `HttpSession` have unit tests.
