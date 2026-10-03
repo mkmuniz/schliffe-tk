@@ -42,6 +42,28 @@ Then open a new terminal (in VS Code: **Reload Window**) and start a new Claude 
 
 It puts the shims first in your `PATH` (bash and zsh), registers the Claude Code hooks, and migrates an old Elagix install if there is one. An archive whose checksum doesn't match the release is never installed. Windows: see [Platforms](#platforms).
 
+### Or install the binary with a package manager
+
+Prefer a command over a piped script? Each of these installs the binary; then run **`schliffe setup`** once to wire the shims and the Claude Code hook (preview with `schliffe setup --dry-run`, undo with `schliffe setup --uninstall`):
+
+```bash
+cargo install schliffe && schliffe setup                       # Rust toolchain
+brew install mkmuniz/schliffe/schliffe && schliffe setup       # Homebrew (Mac/Linux)
+npm i -g schliffe-tk && schliffe setup                         # npm
+```
+
+### Or as a Claude Code plugin
+
+Installs the hooks (MCP result trimming, image shrinking, pasted-log warnings) with no manual `settings.json` editing. Then `/schliffe-setup` wires the shell-command shim:
+
+```
+claude plugin marketplace add mkmuniz/schliffe-tk
+claude plugin install schliffe@schliffe-tk
+/schliffe-setup
+```
+
+See [`packaging/README.md`](packaging/README.md) for publishing details.
+
 <details>
 <summary>From a clone / building from source</summary>
 
@@ -192,7 +214,7 @@ Details and the evidence behind each rule: [`specs.md`](specs.md) §4.
 | `SCHLIFFE_NO_HOOK=1` | `install.sh`: skip the Claude Code hooks |
 | `SCHLIFFE_ALLOW_RELATIVE_PATH=1` | Allow relative `$PATH` entries when resolving the real binary (off by default: an untrusted repo could ship its own `git`) |
 
-Commands: `schliffe stats` · `schliffe show <hash>` · `schliffe hook install|uninstall` · `schliffe mcp` · `schliffe compress` · `schliffe store gc|clear` · `schliffe --version`.
+Commands: `schliffe setup [--dry-run|--uninstall|--no-hook]` · `schliffe stats` · `schliffe show <hash>` · `schliffe hook install|uninstall` · `schliffe mcp` · `schliffe compress` · `schliffe store gc|clear` · `schliffe --version`.
 
 ## Platforms
 
