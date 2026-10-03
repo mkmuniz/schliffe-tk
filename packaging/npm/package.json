@@ -1,0 +1,13 @@
+{
+  "name": "schliffe-tk",
+  "version": "0.4.0",
+  "description": "Cuts token waste in Claude Code sessions (shell command output, MCP tool results, prose). Installs the Schliffe binary; run `schliffe setup` to activate.",
+  "homepage": "https://github.com/mkmuniz/schliffe-tk",
+  "repository": { "type": "git", "url": "https://github.com/mkmuniz/schliffe-tk.git" },
+  "license": "MIT",
+  "keywords": ["claude-code", "tokens", "compression", "mcp", "cost", "agent"],
+  "bin": { "schliffe": "bin/cli.js" },
+  "scripts": { "postinstall": "node install.js" },
+  "files": ["bin/cli.js", "install.js"],
+  "engines": { "node": ">=18" }
+}

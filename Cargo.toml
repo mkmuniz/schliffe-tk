@@ -3,6 +3,12 @@ name = "schliffe"
 version = "0.4.0"
 edition = "2024"
 license = "MIT"
+description = "Cuts token waste in Claude Code sessions: shell command output, MCP tool results, and prose. Deterministic, auditable, no telemetry."
+repository = "https://github.com/mkmuniz/schliffe-tk"
+homepage = "https://github.com/mkmuniz/schliffe-tk"
+readme = "README.md"
+keywords = ["claude-code", "tokens", "mcp", "compression", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 base64 = "0.23.1"
