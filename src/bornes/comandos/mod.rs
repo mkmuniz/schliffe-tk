@@ -59,9 +59,7 @@ pub fn run(invoked_name: &str, rest_args: &[String]) -> ExitCode {
 
     // Non-interactive path (pipe) — this is where filtering kicks in.
     let (run_args, subcommand): (Vec<String>, Option<&str>) = match invoked_name {
-        "git"
-            if rest_args.first().map(String::as_str) == Some("status") && rest_args.len() == 1 =>
-        {
+        "git" if is_git_status_filterable(rest_args) => {
             (
                 vec!["status".into(), "--porcelain=v1".into(), "--branch".into()],
                 Some("git-status"),
@@ -275,6 +273,58 @@ fn finalize(filtered: Option<String>, raw: &str) -> String {
     }
 }
 
+/// `git status` with zero or more flags (but no path arguments) can be
+/// replaced by `--porcelain=v1 --branch` for a smaller, machine-readable
+/// output.  Path arguments or the `--` separator mean the caller wants a
+/// scoped query — replacing the args would widen it, so we leave it alone.
+fn is_git_status_filterable(rest_args: &[String]) -> bool {
+    rest_args.first().map(String::as_str) == Some("status")
+        && rest_args[1..].iter().all(|a| a.starts_with('-') && a != "--")
+}
+
 fn looks_like_git_sha(s: &str) -> bool {
     (7..=40).contains(&s.len()) && s.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn s(args: &[&str]) -> Vec<String> {
+        args.iter().map(|a| a.to_string()).collect()
+    }
+
+    #[test]
+    fn git_status_bare() {
+        assert!(is_git_status_filterable(&s(&["status"])));
+    }
+
+    #[test]
+    fn git_status_with_flags() {
+        assert!(is_git_status_filterable(&s(&["status", "-s"])));
+        assert!(is_git_status_filterable(&s(&["status", "--short"])));
+        assert!(is_git_status_filterable(&s(&["status", "--porcelain"])));
+        assert!(is_git_status_filterable(&s(&[
+            "status",
+            "--porcelain=v2",
+            "--branch"
+        ])));
+        assert!(is_git_status_filterable(&s(&["status", "-uno"])));
+    }
+
+    #[test]
+    fn git_status_with_paths_not_filterable() {
+        assert!(!is_git_status_filterable(&s(&["status", "src/"])));
+        assert!(!is_git_status_filterable(&s(&["status", "--", "src/"])));
+        assert!(!is_git_status_filterable(&s(&[
+            "status", "-s", "--", "file.rs"
+        ])));
+    }
+
+    #[test]
+    fn git_status_not_status() {
+        assert!(!is_git_status_filterable(&s(&["diff"])));
+        assert!(!is_git_status_filterable(&s(&["log"])));
+        assert!(!is_git_status_filterable(&[]));
+    }
 }
