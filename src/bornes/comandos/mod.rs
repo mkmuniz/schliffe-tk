@@ -59,12 +59,10 @@ pub fn run(invoked_name: &str, rest_args: &[String]) -> ExitCode {
 
     // Non-interactive path (pipe) — this is where filtering kicks in.
     let (run_args, subcommand): (Vec<String>, Option<&str>) = match invoked_name {
-        "git" if is_git_status_filterable(rest_args) => {
-            (
-                vec!["status".into(), "--porcelain=v1".into(), "--branch".into()],
-                Some("git-status"),
-            )
-        }
+        "git" if is_git_status_filterable(rest_args) => (
+            vec!["status".into(), "--porcelain=v1".into(), "--branch".into()],
+            Some("git-status"),
+        ),
         "git" if rest_args.first().map(String::as_str) == Some("log") => {
             (rest_args.to_vec(), Some("git-log"))
         }
@@ -279,7 +277,9 @@ fn finalize(filtered: Option<String>, raw: &str) -> String {
 /// scoped query — replacing the args would widen it, so we leave it alone.
 fn is_git_status_filterable(rest_args: &[String]) -> bool {
     rest_args.first().map(String::as_str) == Some("status")
-        && rest_args[1..].iter().all(|a| a.starts_with('-') && a != "--")
+        && rest_args[1..]
+            .iter()
+            .all(|a| a.starts_with('-') && a != "--")
 }
 
 fn looks_like_git_sha(s: &str) -> bool {
