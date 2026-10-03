@@ -42,7 +42,7 @@ enum ShellKind {
     Bash,
 }
 
-pub fn run(dry_run: bool) -> ExitCode {
+pub fn run(dry_run: bool, no_hook: bool) -> ExitCode {
     if cfg!(windows) {
         eprintln!(
             "schliffe: `setup` is Unix-only (shims are symlinks). On native Windows use install.ps1."
@@ -124,10 +124,17 @@ pub fn run(dry_run: bool) -> ExitCode {
     }
 
     // 3. Claude Code hook — reuses bornes::hook (backup + idempotent).
+    // Skipped with --no-hook (e.g. the plugin ships its own hooks, so
+    // registering here too would double-process every MCP result).
+    let skip_hook = no_hook || std::env::var_os("SCHLIFFE_NO_HOOK").is_some();
     if dry_run {
-        println!("  would register the Claude Code hook (schliffe hook install)");
-    } else if std::env::var_os("SCHLIFFE_NO_HOOK").is_some() {
-        println!("schliffe: skipping the Claude Code hook (SCHLIFFE_NO_HOOK is set)");
+        if skip_hook {
+            println!("  would skip the Claude Code hook (--no-hook)");
+        } else {
+            println!("  would register the Claude Code hook (schliffe hook install)");
+        }
+    } else if skip_hook {
+        println!("schliffe: skipping the Claude Code hook (--no-hook / SCHLIFFE_NO_HOOK)");
     } else if home.join(".claude").is_dir() {
         hook::install();
     } else {

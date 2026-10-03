@@ -90,16 +90,19 @@ pub fn run(args: &[String]) -> ExitCode {
         [cmd, rest @ ..] if cmd == "setup" => {
             let dry_run = rest.iter().any(|a| a.as_str() == "--dry-run");
             let uninstall = rest.iter().any(|a| a.as_str() == "--uninstall");
+            let no_hook = rest.iter().any(|a| a.as_str() == "--no-hook");
             let unknown = rest
                 .iter()
-                .find(|a| !matches!(a.as_str(), "--dry-run" | "--uninstall"));
+                .find(|a| !matches!(a.as_str(), "--dry-run" | "--uninstall" | "--no-hook"));
             if let Some(arg) = unknown {
-                eprintln!("schliffe: unknown setup option '{arg}' (use --dry-run or --uninstall)");
+                eprintln!(
+                    "schliffe: unknown setup option '{arg}' (use --dry-run, --uninstall or --no-hook)"
+                );
                 ExitCode::FAILURE
             } else if uninstall {
                 crate::core::setup::uninstall(dry_run)
             } else {
-                crate::core::setup::run(dry_run)
+                crate::core::setup::run(dry_run, no_hook)
             }
         }
         [cmd] if cmd == "report" => {
