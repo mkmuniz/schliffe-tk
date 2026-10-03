@@ -14,6 +14,8 @@ Every item here comes from a gap already recorded in `KNOWN_ISSUES.md` (which ex
 
 ## Command coverage (Layer B / `bornes/comandos`)
 
+- [x] M13 stats-guided audit (2026-10-02): fixed `git status` filter to accept flags (was bare-only, 164 passthrough). Top unfiltered commands all produce < 2.2 KB — no new filters needed.
+
 - [x] First batch of long-tail filters (2026-09-24): npm/pnpm/yarn/pip install, docker pull/build, dotnet, cargo stderr, go — plus stderr support in Layer B (`stream = "stderr"|"both"`).
 - [ ] Write TOML filters for the remaining long-tail commands (RTK audit, specs §10): `go-build`, `tsc`, `rg`, `make`, `jq`, `poetry`, `uv`, `mise`, `jj`, `nx`, `turbo`, `pre-commit`, `grep`, `fd`, `tree`, `wc`, `df`, `stat`, `shellcheck`, `yamllint`, `oxlint`, `ruff-format`, `cargo-clippy`, `ls-la`, `golangci-lint`, among others.
 - [x] ~~Make Layer B's pipeline order configurable~~ — it already is: steps run in the order the TOML lists them (the "fixed order" note was wrong).
