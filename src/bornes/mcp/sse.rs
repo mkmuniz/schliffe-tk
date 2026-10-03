@@ -7,7 +7,8 @@
 //!
 //! This is a push parser: feed it one line at a time (newline already
 //! stripped). It returns a completed event only when a blank line dispatches
-//! it, matching the spec's event-boundary rule.
+//! it, matching the spec's event-boundary rule. `id:` values are retained as
+//! `last_event_id` so a dropped stream can resume with `Last-Event-ID`.
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct SseEvent {
@@ -22,11 +23,17 @@ pub struct SseParser {
     event: String,
     data: String,
     saw_data: bool,
+    last_event_id: Option<String>,
 }
 
 impl SseParser {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The most recent `id:` value seen, for `Last-Event-ID` on reconnect.
+    pub fn last_event_id(&self) -> Option<&str> {
+        self.last_event_id.as_deref()
     }
 
     /// Feed one line (without its trailing newline). Returns a completed
@@ -60,8 +67,11 @@ impl SseParser {
                 self.data.push_str(value);
                 self.saw_data = true;
             }
-            // `id`, `retry` and unknown fields are ignored (id tracking is
-            // added with reconnect support).
+            // Spec: ignore an id value containing a NUL.
+            "id" if !value.contains('\0') => {
+                self.last_event_id = Some(value.to_string());
+            }
+            // `retry` and unknown fields are ignored.
             _ => {}
         }
         None
@@ -147,5 +157,16 @@ mod tests {
     fn no_space_after_colon_is_accepted() {
         let events = collect("data:hi\n\n");
         assert_eq!(events[0].data, "hi");
+    }
+
+    #[test]
+    fn last_event_id_is_tracked_and_nul_rejected() {
+        let mut parser = SseParser::new();
+        for line in "id: 42\ndata: x\n\n".split('\n') {
+            parser.feed_line(line);
+        }
+        assert_eq!(parser.last_event_id(), Some("42"));
+        parser.feed_line("id: a\0b");
+        assert_eq!(parser.last_event_id(), Some("42"));
     }
 }

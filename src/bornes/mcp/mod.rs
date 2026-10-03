@@ -10,6 +10,7 @@ use std::process::{Command, ExitCode, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CompressionLevel {
@@ -51,6 +52,7 @@ pub fn run_http_with_options(
     };
     let state = Arc::new(ProxyState::default());
     let mut session = HttpSession::default();
+    let mut server_stream_started = false;
     let stdin = std::io::stdin();
     let mut reader = stdin.lock();
 
@@ -179,14 +181,152 @@ pub fn run_http_with_options(
             session.capture_protocol_version(&body);
             handle_server_message(&body, &state, &options);
         }
+
+        // Once initialize has negotiated a protocol version, open the optional
+        // standalone GET stream so the server can push requests/notifications
+        // that are not tied to any POST (MCP Streamable HTTP §server→client).
+        if !server_stream_started && session.protocol_version.is_some() {
+            server_stream_started = true;
+            spawn_server_stream(
+                client.clone(),
+                url.to_string(),
+                headers.clone(),
+                session.clone(),
+                state.clone(),
+                options.clone(),
+            );
+        }
     }
+}
+
+/// Background listener for server-initiated messages on the standalone GET
+/// stream. It auto-reconnects (exponential backoff capped at 30s, resuming
+/// with `Last-Event-ID`) until the server signals it has no such stream, or
+/// the process exits on client EOF — a detached thread, never joined, so
+/// shutdown never blocks on it.
+fn spawn_server_stream(
+    client: reqwest::blocking::Client,
+    url: String,
+    headers: Vec<(String, String)>,
+    session: HttpSession,
+    state: Arc<ProxyState>,
+    options: Options,
+) {
+    thread::spawn(move || {
+        const INITIAL_BACKOFF: Duration = Duration::from_millis(500);
+        const MAX_BACKOFF: Duration = Duration::from_secs(30);
+        let mut last_event_id: Option<String> = None;
+        let mut backoff = INITIAL_BACKOFF;
+        loop {
+            match open_server_stream(
+                &client,
+                &url,
+                &headers,
+                &session,
+                last_event_id.as_deref(),
+                &state,
+                &options,
+            ) {
+                // The server offers no standalone stream (405/non-SSE): stop,
+                // this is a normal, optional part of the protocol.
+                Ok(StreamOutcome::Unsupported) => return,
+                Ok(StreamOutcome::Closed {
+                    last_id,
+                    got_events,
+                }) => {
+                    if last_id.is_some() {
+                        last_event_id = last_id;
+                    }
+                    // A stream that actually delivered work earns a fresh,
+                    // short reconnect delay; a bare open/close keeps backing off.
+                    backoff = if got_events { INITIAL_BACKOFF } else { backoff };
+                    thread::sleep(backoff);
+                    backoff = (backoff * 2).min(MAX_BACKOFF);
+                }
+                Err(_) => {
+                    thread::sleep(backoff);
+                    backoff = (backoff * 2).min(MAX_BACKOFF);
+                }
+            }
+        }
+    });
+}
+
+enum StreamOutcome {
+    /// Non-200 or non-SSE response — the server has no standalone GET stream.
+    Unsupported,
+    /// The stream opened and later closed; `last_id` resumes a reconnect and
+    /// `got_events` says whether any message arrived (to reset the backoff).
+    Closed {
+        last_id: Option<String>,
+        got_events: bool,
+    },
+}
+
+/// Opens one GET SSE stream and forwards every server message through the same
+/// transforms as a POST response, until the stream closes.
+fn open_server_stream(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    headers: &[(String, String)],
+    session: &HttpSession,
+    last_event_id: Option<&str>,
+    state: &Arc<ProxyState>,
+    options: &Options,
+) -> Result<StreamOutcome, reqwest::Error> {
+    let mut request = client.get(url).header("Accept", "text/event-stream");
+    if let Some(id) = &session.session_id {
+        request = request.header("Mcp-Session-Id", id);
+    }
+    if let Some(version) = &session.protocol_version {
+        request = request.header("MCP-Protocol-Version", version);
+    }
+    for (name, value) in headers {
+        request = request.header(name, expand_header_value(value));
+    }
+    if let Some(token) = &session.oauth_token {
+        request = request.header("Authorization", format!("Bearer {token}"));
+    }
+    if let Some(id) = last_event_id {
+        request = request.header("Last-Event-ID", id);
+    }
+
+    let response = request.send()?;
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    if response.status() != reqwest::StatusCode::OK
+        || !content_type.starts_with("text/event-stream")
+    {
+        return Ok(StreamOutcome::Unsupported);
+    }
+
+    let mut reader = BufReader::new(response);
+    let mut parser = sse::SseParser::new();
+    let mut got_events = false;
+    // Ends on stream close (`Ok(None)`) or a read error — either reconnects.
+    while let Ok(Some(line)) = read_frame(&mut reader, crate::core::secure::MAX_INPUT_BYTES) {
+        if let Some(event) = parser.feed_line(&line)
+            && !event.data.trim().is_empty()
+        {
+            got_events = true;
+            handle_server_message(&event.data, state, options);
+        }
+    }
+    Ok(StreamOutcome::Closed {
+        last_id: parser.last_event_id().map(str::to_string),
+        got_events,
+    })
 }
 
 /// Per-connection state the HTTP proxy threads through every request:
 /// the server-assigned session id, the OAuth bearer token (if any), and the
 /// protocol version negotiated by `initialize` — which the MCP spec says the
 /// client echoes back as `MCP-Protocol-Version` on all later requests.
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct HttpSession {
     session_id: Option<String>,
     oauth_token: Option<String>,
