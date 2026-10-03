@@ -50,8 +50,7 @@ pub fn run_http_with_options(
         }
     };
     let state = Arc::new(ProxyState::default());
-    let mut session_id = None::<String>;
-    let mut oauth_token = None::<String>;
+    let mut session = HttpSession::default();
     let stdin = std::io::stdin();
     let mut reader = stdin.lock();
 
@@ -112,14 +111,7 @@ pub fn run_http_with_options(
             }
         }
 
-        let mut response = match send_http_request(
-            &client,
-            url,
-            &line,
-            session_id.as_deref(),
-            &headers,
-            oauth_token.as_deref(),
-        ) {
+        let mut response = match send_http_request(&client, url, &line, &headers, &session) {
             Ok(response) => response,
             Err(e) => {
                 eprintln!("schliffe: MCP HTTP request failed: {e}");
@@ -134,15 +126,8 @@ pub fn run_http_with_options(
                 .map(str::to_owned);
             match oauth::authorize(&client, url, challenge.as_deref()) {
                 Ok(tokens) => {
-                    oauth_token = Some(tokens.access_token);
-                    response = match send_http_request(
-                        &client,
-                        url,
-                        &line,
-                        session_id.as_deref(),
-                        &headers,
-                        oauth_token.as_deref(),
-                    ) {
+                    session.oauth_token = Some(tokens.access_token);
+                    response = match send_http_request(&client, url, &line, &headers, &session) {
                         Ok(response) => response,
                         Err(e) => {
                             eprintln!("schliffe: authenticated MCP request failed: {e}");
@@ -159,7 +144,7 @@ pub fn run_http_with_options(
         if let Some(id) = response.headers().get("Mcp-Session-Id")
             && let Ok(id) = id.to_str()
         {
-            session_id = Some(id.to_string());
+            session.session_id = Some(id.to_string());
         }
         let status = response.status();
         let content_type = response
@@ -186,11 +171,41 @@ pub fn run_http_with_options(
                 if let Some(event) = parser.feed_line(line)
                     && !event.data.trim().is_empty()
                 {
+                    session.capture_protocol_version(&event.data);
                     handle_server_message(&event.data, &state, &options);
                 }
             }
         } else {
+            session.capture_protocol_version(&body);
             handle_server_message(&body, &state, &options);
+        }
+    }
+}
+
+/// Per-connection state the HTTP proxy threads through every request:
+/// the server-assigned session id, the OAuth bearer token (if any), and the
+/// protocol version negotiated by `initialize` — which the MCP spec says the
+/// client echoes back as `MCP-Protocol-Version` on all later requests.
+#[derive(Default)]
+struct HttpSession {
+    session_id: Option<String>,
+    oauth_token: Option<String>,
+    protocol_version: Option<String>,
+}
+
+impl HttpSession {
+    /// Latch the negotiated protocol version from an `initialize` result the
+    /// first time it is seen; later messages never change it.
+    fn capture_protocol_version(&mut self, message: &str) {
+        if self.protocol_version.is_some() {
+            return;
+        }
+        if let Ok(msg) = serde_json::from_str::<Value>(message)
+            && let Some(version) = msg
+                .pointer("/result/protocolVersion")
+                .and_then(Value::as_str)
+        {
+            self.protocol_version = Some(version.to_string());
         }
     }
 }
@@ -199,22 +214,24 @@ fn send_http_request(
     client: &reqwest::blocking::Client,
     url: &str,
     body: &str,
-    session_id: Option<&str>,
     headers: &[(String, String)],
-    oauth_token: Option<&str>,
+    session: &HttpSession,
 ) -> Result<reqwest::blocking::Response, reqwest::Error> {
     let mut request = client
         .post(url)
         .header("Content-Type", "application/json")
         .header("Accept", "application/json, text/event-stream")
         .body(body.to_owned());
-    if let Some(id) = session_id {
+    if let Some(id) = &session.session_id {
         request = request.header("Mcp-Session-Id", id);
+    }
+    if let Some(version) = &session.protocol_version {
+        request = request.header("MCP-Protocol-Version", version);
     }
     for (name, value) in headers {
         request = request.header(name, expand_header_value(value));
     }
-    if let Some(token) = oauth_token {
+    if let Some(token) = &session.oauth_token {
         request = request.header("Authorization", format!("Bearer {token}"));
     }
     request.send()
@@ -600,5 +617,27 @@ mod framing_tests {
         assert_eq!(read_frame(&mut reader, 4).unwrap().as_deref(), Some(""));
         assert_eq!(read_frame(&mut reader, 4).unwrap().as_deref(), Some("€\r"));
         assert!(read_frame(&mut reader, 4).unwrap().is_none());
+    }
+
+    #[test]
+    fn protocol_version_latched_from_initialize_result() {
+        let mut session = HttpSession::default();
+        session.capture_protocol_version(
+            r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}"#,
+        );
+        assert_eq!(session.protocol_version.as_deref(), Some("2025-06-18"));
+        // A later message never overwrites the negotiated version.
+        session.capture_protocol_version(
+            r#"{"jsonrpc":"2.0","id":2,"result":{"protocolVersion":"other"}}"#,
+        );
+        assert_eq!(session.protocol_version.as_deref(), Some("2025-06-18"));
+    }
+
+    #[test]
+    fn protocol_version_ignores_non_initialize_messages() {
+        let mut session = HttpSession::default();
+        session.capture_protocol_version(r#"{"jsonrpc":"2.0","method":"ping"}"#);
+        session.capture_protocol_version("not json");
+        assert_eq!(session.protocol_version, None);
     }
 }
