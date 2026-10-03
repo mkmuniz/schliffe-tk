@@ -85,6 +85,23 @@ pub fn run(args: &[String]) -> ExitCode {
         }
         [cmd, sub] if cmd == "hook" && sub == "install" => bornes::hook::install(),
         [cmd, sub] if cmd == "hook" && sub == "uninstall" => bornes::hook::uninstall(),
+        // `schliffe setup [--dry-run] [--uninstall]` — the activation every
+        // install path (curl, Homebrew, cargo, npm, plugin) reuses.
+        [cmd, rest @ ..] if cmd == "setup" => {
+            let dry_run = rest.iter().any(|a| a.as_str() == "--dry-run");
+            let uninstall = rest.iter().any(|a| a.as_str() == "--uninstall");
+            let unknown = rest
+                .iter()
+                .find(|a| !matches!(a.as_str(), "--dry-run" | "--uninstall"));
+            if let Some(arg) = unknown {
+                eprintln!("schliffe: unknown setup option '{arg}' (use --dry-run or --uninstall)");
+                ExitCode::FAILURE
+            } else if uninstall {
+                crate::core::setup::uninstall(dry_run)
+            } else {
+                crate::core::setup::run(dry_run)
+            }
+        }
         [cmd] if cmd == "report" => {
             print!("{}", crate::core::report::run(7));
             ExitCode::SUCCESS
@@ -124,7 +141,7 @@ pub fn run(args: &[String]) -> ExitCode {
         },
         _ => {
             eprintln!(
-                "usage: schliffe --version | schliffe stats | schliffe report [--days N] | schliffe hook install|uninstall | schliffe show <hash> | schliffe store clear | schliffe store gc | schliffe compress [--sentences N]"
+                "usage: schliffe --version | schliffe setup [--dry-run|--uninstall] | schliffe stats | schliffe report [--days N] | schliffe hook install|uninstall | schliffe show <hash> | schliffe store clear | schliffe store gc | schliffe compress [--sentences N]"
             );
             ExitCode::FAILURE
         }
