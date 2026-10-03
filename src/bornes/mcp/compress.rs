@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::collections::HashSet;
 
 const MIN_DEDUP_BYTES: usize = 2 * 1024;
 
@@ -12,11 +13,20 @@ const MIN_DEDUP_BYTES: usize = 2 * 1024;
 ///   - truncates a long string, keeping a prefix + a count of what's left;
 ///   - caps a large array to the first N items + an omission marker.
 ///
-/// Pruning by field's semantic relevance (pagination, HATEOAS) is out of
-/// scope for v1 — it would require knowing the specific API, which would go
-/// against business rule 5.
+/// A fourth technique drops well-known **hypermedia navigation** keys (HAL
+/// `_links`). This is not the API-specific inference business rule 5 forbids:
+/// the key is a cross-API standard, matched by name alone, never by guessing
+/// what a domain field means. Dropping it is lossy, so — exactly like the
+/// array cap — the raw stays recoverable via `schliffe show` (rule 4), and
+/// rule 6 discards the whole transform if the recovery hint would cost more
+/// than the `_links` block saved. Extend for one server with
+/// `SCHLIFFE_MCP_PRUNE_KEYS=key1,key2`.
 const MAX_STRING_CHARS: usize = 300;
 const MAX_ARRAY_ITEMS: usize = 10;
+
+/// Hypermedia keys dropped by default — see `MAX_STRING_CHARS`'s doc comment
+/// for why this does not violate rule 5.
+const PRUNE_KEY_DEFAULTS: &[&str] = &["_links"];
 
 /// Tools whose result is file content, not API data — never compressed.
 /// Found testing against the real `@modelcontextprotocol/server-filesystem`
@@ -154,7 +164,8 @@ fn try_compact_text_block(block: &Value) -> Option<(Value, bool)> {
     let text = block.get("text").and_then(Value::as_str)?;
     let parsed: Value = serde_json::from_str(text).ok()?;
     let mut lossy = false;
-    let compact = compact_json(&parsed, &mut lossy);
+    let prune = prune_keys();
+    let compact = compact_json(&parsed, &mut lossy, &prune);
     let compact_text = serde_json::to_string(&compact).ok()?;
     if compact_text.len() < text.len() {
         let mut b = block.clone();
@@ -165,7 +176,27 @@ fn try_compact_text_block(block: &Value) -> Option<(Value, bool)> {
     }
 }
 
-fn compact_json(value: &Value, lossy: &mut bool) -> Value {
+/// The set of object keys to drop: the hypermedia defaults plus anything in
+/// `SCHLIFFE_MCP_PRUNE_KEYS`. Built once per result, not per key.
+fn prune_keys() -> HashSet<String> {
+    prune_set_from(std::env::var("SCHLIFFE_MCP_PRUNE_KEYS").ok().as_deref())
+}
+
+fn prune_set_from(extra: Option<&str>) -> HashSet<String> {
+    let mut set: HashSet<String> = PRUNE_KEY_DEFAULTS.iter().map(|s| s.to_string()).collect();
+    if let Some(extra) = extra {
+        set.extend(
+            extra
+                .split(',')
+                .map(str::trim)
+                .filter(|k| !k.is_empty())
+                .map(str::to_string),
+        );
+    }
+    set
+}
+
+fn compact_json(value: &Value, lossy: &mut bool, prune: &HashSet<String>) -> Value {
     match value {
         Value::Object(map) => {
             let mut out = serde_json::Map::new();
@@ -173,7 +204,12 @@ fn compact_json(value: &Value, lossy: &mut bool) -> Value {
                 if v.is_null() {
                     continue;
                 }
-                out.insert(k.clone(), compact_json(v, lossy));
+                // Hypermedia navigation metadata — dropped, but recoverable.
+                if prune.contains(k) {
+                    *lossy = true;
+                    continue;
+                }
+                out.insert(k.clone(), compact_json(v, lossy, prune));
             }
             Value::Object(out)
         }
@@ -181,7 +217,7 @@ fn compact_json(value: &Value, lossy: &mut bool) -> Value {
             let mut out: Vec<Value> = items
                 .iter()
                 .take(MAX_ARRAY_ITEMS)
-                .map(|v| compact_json(v, lossy))
+                .map(|v| compact_json(v, lossy, prune))
                 .collect();
             if items.len() > MAX_ARRAY_ITEMS {
                 *lossy = true;
@@ -320,6 +356,48 @@ mod tests {
         assert!(
             serde_json::to_string(&out).unwrap().len() < serde_json::to_string(&msg).unwrap().len()
         );
+    }
+
+    #[test]
+    fn prunes_hal_links_and_keeps_data() {
+        let payload = json!({
+            "id": 42,
+            "title": "real data",
+            "_links": {
+                "self": {"href": "https://api.example.com/things/42"},
+                "next": {"href": "https://api.example.com/things?page=2&per_page=50"},
+                "prev": {"href": "https://api.example.com/things?page=0&per_page=50"},
+                "author": {"href": "https://api.example.com/users/99"}
+            }
+        });
+        let msg = wrap(&payload);
+        let out = compress_tools_call_result(&msg, "search", |_| "hash0123456789ab".into());
+        let text = out["result"]["content"][0]["text"].as_str().unwrap();
+        let parsed: Value = serde_json::from_str(text).unwrap();
+        assert!(parsed.get("_links").is_none(), "_links should be pruned");
+        assert_eq!(parsed["title"], "real data", "real data must survive");
+        // Lossy pruning keeps the raw recoverable (business rule 4).
+        let hint = out["result"]["content"][1]["text"].as_str().unwrap();
+        assert!(hint.contains("schliffe show hash0123456789ab"));
+    }
+
+    #[test]
+    fn tiny_links_block_is_kept_by_rule_6() {
+        // A `_links` smaller than the recovery hint it would cost: pruning
+        // would inflate the message, so rule 6 keeps the original untouched.
+        let msg = wrap(&json!({"name": "x", "_links": {"self": "/x"}}));
+        let out = compress_tools_call_result(&msg, "search", |_| "h".into());
+        assert_eq!(out, msg);
+    }
+
+    #[test]
+    fn prune_set_includes_defaults_and_env_extras() {
+        let set = prune_set_from(Some("etag, debug_trace ,"));
+        assert!(set.contains("_links"));
+        assert!(set.contains("etag"));
+        assert!(set.contains("debug_trace"));
+        assert!(!set.contains("")); // empty entries dropped
+        assert_eq!(prune_set_from(None).len(), PRUNE_KEY_DEFAULTS.len());
     }
 
     #[test]
