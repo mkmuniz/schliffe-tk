@@ -53,13 +53,9 @@ SCRIPT_DIR=""
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
-SHIMS_DIR="${SCHLIFFE_SHIMS_DIR:-$HOME/.schliffe/shims}"
-
-# Commands with a known filter today (Layer A: git/pytest/cargo — specs
-# §5.4; Layer B: docker/npm/terraform — filters-toml/*.toml). Adding a new
-# command here doesn't need new code if a Layer B rule for it already
-# exists; it just needs one more symlink.
-DEFAULT_COMMANDS=(git cargo pytest docker npm pnpm yarn pip pip3 dotnet go terraform)
+# The shim list and PATH/hook wiring moved into `schliffe setup` (one source
+# of truth across every install path). This script only acquires the binary
+# and then calls it.
 
 have_checkout() { [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/Cargo.toml" ]; }
 
@@ -212,119 +208,11 @@ if [ -d "$OLD_ROOT" ] && [ -z "${SCHLIFFE_SHIMS_DIR:-}" ]; then
     echo "          delete it once every Claude Code session has been restarted."
 fi
 
-mkdir -p "$SHIMS_DIR"
-# Only shims commands that actually exist on this machine (looked up with the
-# shims folder removed from PATH, so a re-run doesn't find its own shims): a
-# shim for a missing tool would make `command -v terraform` succeed and
-# mislead scripts that probe for it. Installed a new tool later? Re-run this.
-#
-# The lookup uses the union of this process's PATH and the PATH of the
-# user's full login+interactive shell (found 2026-09-25): run from a trimmed
-# environment — e.g. an agent's shell that never sourced ~/.zshrc, where nvm
-# and dotnet live — `npm`/`dotnet` looked "not installed". And an existing
-# shim is never removed: a tool that can't be seen from here isn't proof
-# it's gone.
-USER_SHELL_PATH="$("${SHELL:-/bin/bash}" -lic 'printf %s "$PATH"' </dev/null 2>/dev/null | tail -n 1 || true)"
-REAL_PATH="$(printf '%s:%s' "$PATH" "$USER_SHELL_PATH" | tr ':' '\n' | grep -v '^$' | grep -vxF "$SHIMS_DIR" | awk '!seen[$0]++' | paste -sd: -)"
-SHIMMED=()
-SKIPPED=()
-for cmd in "${DEFAULT_COMMANDS[@]}"; do
-    if PATH="$REAL_PATH" command -v "$cmd" >/dev/null 2>&1 || [ -L "$SHIMS_DIR/$cmd" ]; then
-        ln -sf "$BIN_PATH" "$SHIMS_DIR/$cmd"
-        SHIMMED+=("$cmd")
-    else
-        SKIPPED+=("$cmd")
-    fi
-done
-# `schliffe` itself, so `schliffe show <hash>` (the recovery hint printed in
-# filtered output) works as a bare command, not only via the full path.
-ln -sf "$BIN_PATH" "$SHIMS_DIR/schliffe"
-echo "schliffe: shims created in $SHIMS_DIR for: ${SHIMMED[*]:-none} (+ schliffe)"
-if [ ${#SKIPPED[@]} -gt 0 ]; then
-    echo "schliffe: not installed here, skipped: ${SKIPPED[*]} (re-run after installing them)"
-fi
+# Activation is the binary's own job now (`schliffe setup`): shims, PATH
+# across the login/interactive shell files, the Claude Code hook, and the
+# ~/.schliffe permission repair — one source of truth shared with the
+# Homebrew/cargo/npm/plugin install paths. It honors SCHLIFFE_SHIMS_DIR and
+# SCHLIFFE_NO_HOOK, so nothing changes for callers that set them.
+"$BIN_PATH" setup
 
-# Detects the right files from the user's login shell, not from whatever
-# shell is running this script right now (which could just be "bash" via
-# `sh install.sh`).
-case "$(basename "${SHELL:-bash}")" in
-    zsh) LOGIN_FILE="$HOME/.zprofile"; INTERACTIVE_FILE="$HOME/.zshrc"; SHELL_KIND=zsh ;;
-    *) LOGIN_FILE="$HOME/.profile"; INTERACTIVE_FILE="$HOME/.bashrc"; SHELL_KIND=bash ;;
-esac
-
-PATH_LINE="export PATH=\"$SHIMS_DIR:\$PATH\""
-
-# Login file (~/.profile): plain append — conventionally has no
-# interactivity guard, and covers the real `wsl -e bash -lc` case.
-if [ -f "$LOGIN_FILE" ] && grep -Fq "$SHIMS_DIR" "$LOGIN_FILE"; then
-    echo "schliffe: PATH already configured in $LOGIN_FILE (nothing to do)"
-else
-    {
-        echo ""
-        echo "# Schliffe — \$PATH shim (specs.md §5.1)"
-        echo "$PATH_LINE"
-    } >> "$LOGIN_FILE"
-    echo "schliffe: added to PATH in $LOGIN_FILE"
-fi
-
-# Interactive file (~/.bashrc): prepend at the TOP of the file, on purpose —
-# covers the non-login+interactive case (`bash -ic`), which never reads
-# ~/.profile. Only stays ahead of any interactivity guard the file already
-# has if our line is the FIRST thing in the file.
-#
-# zsh is the exception (validated live on macOS, 2026-09-24): `.zshrc` has
-# no interactivity guard, and what it usually DOES have is nvm/pyenv/etc.
-# prepending their own bin folders — a line at the top would end up behind
-# them (`npm` from nvm would win over the shim). So for zsh the line goes at
-# the END, after everything else has touched PATH.
-if [ -f "$INTERACTIVE_FILE" ] && grep -Fq "$SHIMS_DIR" "$INTERACTIVE_FILE"; then
-    echo "schliffe: PATH already configured in $INTERACTIVE_FILE (nothing to do)"
-elif [ "$SHELL_KIND" = zsh ]; then
-    {
-        echo ""
-        echo "# Schliffe — \$PATH shim (specs.md §5.1). Keep this at the END of the"
-        echo "# file, after nvm/pyenv/etc., so the shims stay first in PATH."
-        echo "$PATH_LINE"
-    } >> "$INTERACTIVE_FILE"
-    echo "schliffe: added to the end of $INTERACTIVE_FILE"
-elif [ -f "$INTERACTIVE_FILE" ]; then
-    TMP_FILE="$(mktemp)"
-    {
-        echo "# Schliffe — \$PATH shim (specs.md §5.1). Must come BEFORE any"
-        echo "# interactivity guard the rest of the file already has (e.g."
-        echo "# Ubuntu's default \"if not interactive, exit\") — otherwise it"
-        echo "# has no effect in the non-login+interactive case (\`bash -ic\`)."
-        echo "$PATH_LINE"
-        echo ""
-        cat "$INTERACTIVE_FILE"
-    } > "$TMP_FILE"
-    mv "$TMP_FILE" "$INTERACTIVE_FILE"
-    echo "schliffe: added to the top of $INTERACTIVE_FILE"
-else
-    { echo "# Schliffe — \$PATH shim (specs.md §5.1)"; echo "$PATH_LINE"; } > "$INTERACTIVE_FILE"
-    echo "schliffe: created $INTERACTIVE_FILE with schliffe's PATH"
-fi
-
-# The tree holds raw command output (a `git diff` over a `.env`, a stack
-# trace with a connection string) and the user's pasted prompts. New files
-# are written owner-only by the binary itself; this repairs an install made
-# before that (2026-09-28 hardening) in one pass.
-chmod -R go-rwx "$HOME/.schliffe" 2>/dev/null || true
-
-# Claude Code hook (bornes/hook): covers what the PATH shim can't reach —
-# remote MCP servers (HTTP/OAuth, e.g. Figma) and images. Registered only if
-# Claude Code is present (~/.claude exists); idempotent, keeps a backup of
-# settings.json. Skip with SCHLIFFE_NO_HOOK=1; undo with `schliffe hook uninstall`.
-if [ -n "${SCHLIFFE_NO_HOOK:-}" ]; then
-    echo "schliffe: skipping the Claude Code hook (SCHLIFFE_NO_HOOK is set)"
-elif [ -d "$HOME/.claude" ]; then
-    "$BIN_PATH" hook install
-else
-    echo "schliffe: Claude Code not found (~/.claude missing) — skipped its hook."
-    echo "        Install it later with: schliffe hook install"
-fi
-
-echo ""
-echo "schliffe: installed. Open a new terminal to activate it (covers both"
-echo "interactive use and the way Claude Code invokes commands via a login shell)."
 echo "schliffe: test with 'git status | cat' — if it filters, it worked."
