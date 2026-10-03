@@ -1,6 +1,7 @@
 pub mod compress;
 mod oauth;
 mod schema;
+mod sse;
 
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -9,6 +10,7 @@ use std::process::{Command, ExitCode, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CompressionLevel {
@@ -49,8 +51,8 @@ pub fn run_http_with_options(
         }
     };
     let state = Arc::new(ProxyState::default());
-    let mut session_id = None::<String>;
-    let mut oauth_token = None::<String>;
+    let mut session = HttpSession::default();
+    let mut server_stream_started = false;
     let stdin = std::io::stdin();
     let mut reader = stdin.lock();
 
@@ -111,14 +113,7 @@ pub fn run_http_with_options(
             }
         }
 
-        let mut response = match send_http_request(
-            &client,
-            url,
-            &line,
-            session_id.as_deref(),
-            &headers,
-            oauth_token.as_deref(),
-        ) {
+        let mut response = match send_http_request(&client, url, &line, &headers, &session) {
             Ok(response) => response,
             Err(e) => {
                 eprintln!("schliffe: MCP HTTP request failed: {e}");
@@ -133,15 +128,8 @@ pub fn run_http_with_options(
                 .map(str::to_owned);
             match oauth::authorize(&client, url, challenge.as_deref()) {
                 Ok(tokens) => {
-                    oauth_token = Some(tokens.access_token);
-                    response = match send_http_request(
-                        &client,
-                        url,
-                        &line,
-                        session_id.as_deref(),
-                        &headers,
-                        oauth_token.as_deref(),
-                    ) {
+                    session.oauth_token = Some(tokens.access_token);
+                    response = match send_http_request(&client, url, &line, &headers, &session) {
                         Ok(response) => response,
                         Err(e) => {
                             eprintln!("schliffe: authenticated MCP request failed: {e}");
@@ -158,7 +146,7 @@ pub fn run_http_with_options(
         if let Some(id) = response.headers().get("Mcp-Session-Id")
             && let Ok(id) = id.to_str()
         {
-            session_id = Some(id.to_string());
+            session.session_id = Some(id.to_string());
         }
         let status = response.status();
         let content_type = response
@@ -177,18 +165,187 @@ pub fn run_http_with_options(
         if status.as_u16() == 202 || body.trim().is_empty() {
             continue;
         }
-        let messages = if content_type.starts_with("text/event-stream") {
-            body.lines()
-                .filter_map(|line| line.strip_prefix("data:"))
-                .map(str::trim)
-                .filter(|line| !line.is_empty())
-                .map(str::to_string)
-                .collect::<Vec<_>>()
+        if content_type.starts_with("text/event-stream") {
+            let mut parser = sse::SseParser::new();
+            // The dispatch rule fires on a blank line; append one so a final
+            // event with no trailing blank line is still delivered.
+            for line in body.split('\n').chain(std::iter::once("")) {
+                if let Some(event) = parser.feed_line(line)
+                    && !event.data.trim().is_empty()
+                {
+                    session.capture_protocol_version(&event.data);
+                    handle_server_message(&event.data, &state, &options);
+                }
+            }
         } else {
-            vec![body]
-        };
-        for message in messages {
-            handle_server_message(&message, &state, &options);
+            session.capture_protocol_version(&body);
+            handle_server_message(&body, &state, &options);
+        }
+
+        // Once initialize has negotiated a protocol version, open the optional
+        // standalone GET stream so the server can push requests/notifications
+        // that are not tied to any POST (MCP Streamable HTTP §server→client).
+        if !server_stream_started && session.protocol_version.is_some() {
+            server_stream_started = true;
+            spawn_server_stream(
+                client.clone(),
+                url.to_string(),
+                headers.clone(),
+                session.clone(),
+                state.clone(),
+                options.clone(),
+            );
+        }
+    }
+}
+
+/// Background listener for server-initiated messages on the standalone GET
+/// stream. It auto-reconnects (exponential backoff capped at 30s, resuming
+/// with `Last-Event-ID`) until the server signals it has no such stream, or
+/// the process exits on client EOF — a detached thread, never joined, so
+/// shutdown never blocks on it.
+fn spawn_server_stream(
+    client: reqwest::blocking::Client,
+    url: String,
+    headers: Vec<(String, String)>,
+    session: HttpSession,
+    state: Arc<ProxyState>,
+    options: Options,
+) {
+    thread::spawn(move || {
+        const INITIAL_BACKOFF: Duration = Duration::from_millis(500);
+        const MAX_BACKOFF: Duration = Duration::from_secs(30);
+        let mut last_event_id: Option<String> = None;
+        let mut backoff = INITIAL_BACKOFF;
+        loop {
+            match open_server_stream(
+                &client,
+                &url,
+                &headers,
+                &session,
+                last_event_id.as_deref(),
+                &state,
+                &options,
+            ) {
+                // The server offers no standalone stream (405/non-SSE): stop,
+                // this is a normal, optional part of the protocol.
+                Ok(StreamOutcome::Unsupported) => return,
+                Ok(StreamOutcome::Closed {
+                    last_id,
+                    got_events,
+                }) => {
+                    if last_id.is_some() {
+                        last_event_id = last_id;
+                    }
+                    // A stream that actually delivered work earns a fresh,
+                    // short reconnect delay; a bare open/close keeps backing off.
+                    backoff = if got_events { INITIAL_BACKOFF } else { backoff };
+                    thread::sleep(backoff);
+                    backoff = (backoff * 2).min(MAX_BACKOFF);
+                }
+                Err(_) => {
+                    thread::sleep(backoff);
+                    backoff = (backoff * 2).min(MAX_BACKOFF);
+                }
+            }
+        }
+    });
+}
+
+enum StreamOutcome {
+    /// Non-200 or non-SSE response — the server has no standalone GET stream.
+    Unsupported,
+    /// The stream opened and later closed; `last_id` resumes a reconnect and
+    /// `got_events` says whether any message arrived (to reset the backoff).
+    Closed {
+        last_id: Option<String>,
+        got_events: bool,
+    },
+}
+
+/// Opens one GET SSE stream and forwards every server message through the same
+/// transforms as a POST response, until the stream closes.
+fn open_server_stream(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    headers: &[(String, String)],
+    session: &HttpSession,
+    last_event_id: Option<&str>,
+    state: &Arc<ProxyState>,
+    options: &Options,
+) -> Result<StreamOutcome, reqwest::Error> {
+    let mut request = client.get(url).header("Accept", "text/event-stream");
+    if let Some(id) = &session.session_id {
+        request = request.header("Mcp-Session-Id", id);
+    }
+    if let Some(version) = &session.protocol_version {
+        request = request.header("MCP-Protocol-Version", version);
+    }
+    for (name, value) in headers {
+        request = request.header(name, expand_header_value(value));
+    }
+    if let Some(token) = &session.oauth_token {
+        request = request.header("Authorization", format!("Bearer {token}"));
+    }
+    if let Some(id) = last_event_id {
+        request = request.header("Last-Event-ID", id);
+    }
+
+    let response = request.send()?;
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    if response.status() != reqwest::StatusCode::OK
+        || !content_type.starts_with("text/event-stream")
+    {
+        return Ok(StreamOutcome::Unsupported);
+    }
+
+    let mut reader = BufReader::new(response);
+    let mut parser = sse::SseParser::new();
+    let mut got_events = false;
+    // Ends on stream close (`Ok(None)`) or a read error — either reconnects.
+    while let Ok(Some(line)) = read_frame(&mut reader, crate::core::secure::MAX_INPUT_BYTES) {
+        if let Some(event) = parser.feed_line(&line)
+            && !event.data.trim().is_empty()
+        {
+            got_events = true;
+            handle_server_message(&event.data, state, options);
+        }
+    }
+    Ok(StreamOutcome::Closed {
+        last_id: parser.last_event_id().map(str::to_string),
+        got_events,
+    })
+}
+
+/// Per-connection state the HTTP proxy threads through every request:
+/// the server-assigned session id, the OAuth bearer token (if any), and the
+/// protocol version negotiated by `initialize` — which the MCP spec says the
+/// client echoes back as `MCP-Protocol-Version` on all later requests.
+#[derive(Default, Clone)]
+struct HttpSession {
+    session_id: Option<String>,
+    oauth_token: Option<String>,
+    protocol_version: Option<String>,
+}
+
+impl HttpSession {
+    /// Latch the negotiated protocol version from an `initialize` result the
+    /// first time it is seen; later messages never change it.
+    fn capture_protocol_version(&mut self, message: &str) {
+        if self.protocol_version.is_some() {
+            return;
+        }
+        if let Ok(msg) = serde_json::from_str::<Value>(message)
+            && let Some(version) = msg
+                .pointer("/result/protocolVersion")
+                .and_then(Value::as_str)
+        {
+            self.protocol_version = Some(version.to_string());
         }
     }
 }
@@ -197,22 +354,24 @@ fn send_http_request(
     client: &reqwest::blocking::Client,
     url: &str,
     body: &str,
-    session_id: Option<&str>,
     headers: &[(String, String)],
-    oauth_token: Option<&str>,
+    session: &HttpSession,
 ) -> Result<reqwest::blocking::Response, reqwest::Error> {
     let mut request = client
         .post(url)
         .header("Content-Type", "application/json")
         .header("Accept", "application/json, text/event-stream")
         .body(body.to_owned());
-    if let Some(id) = session_id {
+    if let Some(id) = &session.session_id {
         request = request.header("Mcp-Session-Id", id);
+    }
+    if let Some(version) = &session.protocol_version {
+        request = request.header("MCP-Protocol-Version", version);
     }
     for (name, value) in headers {
         request = request.header(name, expand_header_value(value));
     }
-    if let Some(token) = oauth_token {
+    if let Some(token) = &session.oauth_token {
         request = request.header("Authorization", format!("Bearer {token}"));
     }
     request.send()
@@ -598,5 +757,27 @@ mod framing_tests {
         assert_eq!(read_frame(&mut reader, 4).unwrap().as_deref(), Some(""));
         assert_eq!(read_frame(&mut reader, 4).unwrap().as_deref(), Some("€\r"));
         assert!(read_frame(&mut reader, 4).unwrap().is_none());
+    }
+
+    #[test]
+    fn protocol_version_latched_from_initialize_result() {
+        let mut session = HttpSession::default();
+        session.capture_protocol_version(
+            r#"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18"}}"#,
+        );
+        assert_eq!(session.protocol_version.as_deref(), Some("2025-06-18"));
+        // A later message never overwrites the negotiated version.
+        session.capture_protocol_version(
+            r#"{"jsonrpc":"2.0","id":2,"result":{"protocolVersion":"other"}}"#,
+        );
+        assert_eq!(session.protocol_version.as_deref(), Some("2025-06-18"));
+    }
+
+    #[test]
+    fn protocol_version_ignores_non_initialize_messages() {
+        let mut session = HttpSession::default();
+        session.capture_protocol_version(r#"{"jsonrpc":"2.0","method":"ping"}"#);
+        session.capture_protocol_version("not json");
+        assert_eq!(session.protocol_version, None);
     }
 }
