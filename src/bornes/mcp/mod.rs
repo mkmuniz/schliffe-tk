@@ -1,6 +1,7 @@
 pub mod compress;
 mod oauth;
 mod schema;
+mod sse;
 
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -177,18 +178,19 @@ pub fn run_http_with_options(
         if status.as_u16() == 202 || body.trim().is_empty() {
             continue;
         }
-        let messages = if content_type.starts_with("text/event-stream") {
-            body.lines()
-                .filter_map(|line| line.strip_prefix("data:"))
-                .map(str::trim)
-                .filter(|line| !line.is_empty())
-                .map(str::to_string)
-                .collect::<Vec<_>>()
+        if content_type.starts_with("text/event-stream") {
+            let mut parser = sse::SseParser::new();
+            // The dispatch rule fires on a blank line; append one so a final
+            // event with no trailing blank line is still delivered.
+            for line in body.split('\n').chain(std::iter::once("")) {
+                if let Some(event) = parser.feed_line(line)
+                    && !event.data.trim().is_empty()
+                {
+                    handle_server_message(&event.data, &state, &options);
+                }
+            }
         } else {
-            vec![body]
-        };
-        for message in messages {
-            handle_server_message(&message, &state, &options);
+            handle_server_message(&body, &state, &options);
         }
     }
 }
