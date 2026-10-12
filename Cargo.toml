@@ -1,6 +1,6 @@
 [package]
 name = "schliffe"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 license = "MIT"
 description = "Cuts token waste in Claude Code sessions: shell command output, MCP tool results, and prose. Deterministic, auditable, no telemetry."

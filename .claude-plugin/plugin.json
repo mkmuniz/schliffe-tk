@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "schliffe",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Cuts token waste in Claude Code sessions: trims MCP tool results (Figma, etc.), shrinks large images, and warns on pasted logs — via the Schliffe binary. Run /schliffe-setup once to also shim shell commands.",
   "author": {
     "name": "Mikael Muniz Ribeiro"

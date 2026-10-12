@@ -4,6 +4,17 @@ All notable changes to this project are recorded here. Format loosely inspired b
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-12
+
+### Added
+- **More ways to install, all built on `schliffe setup`** — a self-contained activation step in the binary (shims, PATH across the login/interactive shell files, Claude Code hook, `~/.schliffe` permission repair) that is auditable (`--dry-run`) and reversible (`--uninstall`). Beyond `curl … | bash`: `cargo install schliffe`, a Homebrew formula, an npm package (`npm i -g schliffe-tk`), and a Claude Code plugin + marketplace (`claude plugin install schliffe@schliffe-tk`, hooks with no manual `settings.json` edit, then `/schliffe-setup`). See [`packaging/README.md`](packaging/README.md).
+- **Complete MCP Streamable HTTP lifecycle** (M16): a proper SSE event parser (multi-line `data:`, event boundaries, CRLF), a standalone GET stream for server-initiated messages with auto-reconnect (`Last-Event-ID`), the `MCP-Protocol-Version` header, and clean shutdown on client EOF. Covered end-to-end by a local HTTP fixture (`tests/mcp_http.rs`).
+- **Figma `get_design_context` trimming** (M12): strips `data-name` attributes and resolves CSS `var(--token, fallback)` to the fallback — ~−13% per call, lossless (all `data-node-id`, `className` and asset URLs kept).
+- **HAL `_links` pruning** in MCP tool results: a fourth compaction technique dropping hypermedia navigation metadata (recoverable; extend with `SCHLIFFE_MCP_PRUNE_KEYS`).
+
+### Fixed
+- **`git status` filter was bare-only** (M13): calls with flags (`-s`, `--short`, `--porcelain`, `-uno`) bypassed filtering. Now accepts any flags, still excluding path arguments.
+
 ### Security
 
 Full write-up, including how each was exploited and its regression test: [`SECURITY.md`](SECURITY.md).
