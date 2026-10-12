@@ -14,7 +14,7 @@
 class Schliffe < Formula
   desc "Cuts token waste in Claude Code sessions (shell output, MCP results, prose)"
   homepage "https://github.com/mkmuniz/schliffe-tk"
-  version "0.4.0"
+  version "0.5.0"
   license "MIT"
 
   on_macos do
