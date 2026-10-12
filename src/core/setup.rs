@@ -364,9 +364,24 @@ fn apply_shims(shims_dir: &Path, real_bin: &Path, shimmed: &[String]) -> std::io
     {
         let link = shims_dir.join(cmd);
         let _ = std::fs::remove_file(&link);
-        std::os::unix::fs::symlink(real_bin, &link)?;
+        symlink(real_bin, &link)?;
     }
     Ok(())
+}
+
+// Shims are Unix symlinks. `setup` returns early on Windows (see `run`), so
+// this is never reached there — but it must still compile, hence the stub.
+#[cfg(unix)]
+fn symlink(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(src, dst)
+}
+
+#[cfg(not(unix))]
+fn symlink(_src: &Path, _dst: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "schliffe setup is Unix-only",
+    ))
 }
 
 /// PATH entries with the shims dir and the empty string removed — so a re-run
