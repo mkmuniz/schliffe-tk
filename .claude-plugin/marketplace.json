@@ -1,0 +1,12 @@
+{
+  "name": "schliffe-tk",
+  "owner": { "name": "Mikael Muniz Ribeiro" },
+  "plugins": [
+    {
+      "name": "schliffe",
+      "source": "./",
+      "description": "Token-waste reducer for Claude Code — trims MCP results, images and pasted logs. The shell-command shim is wired by the bundled /schliffe-setup command.",
+      "version": "0.4.0"
+    }
+  ]
+}
