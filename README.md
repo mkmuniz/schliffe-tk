@@ -102,10 +102,15 @@ passed through with no filter (candidates for a new rule):
 
 ```text
 where the cost is
-  re-reading the conversation (cache)      108.6M   71%
-  new content entering it                   27.3M   18%
-  the model's replies                       10.5M  6.9%
-  the model's thinking                       5.6M  3.7%
+  re-reading the conversation (cache)      103.0M   57%
+  new content entering it                   14.6M  8.1%
+  writing it again after the cache broke    44.4M   25%
+  the model's replies                       11.4M  6.3%
+  the model's thinking                       7.4M  4.1%
+
+cache rebuilds (the cached conversation written again at the write price, instead of re-read)
+  idle longer than the cache lifetime (TTL)    49 replies   17.4M tokens    34.7M   19%
+  model switch                                  6 replies    2.5M tokens     5.1M  2.8%
 
 sessions that cost the most
   fleury-grupo-fleury              903 replies  peak context   967k     48.0M   32%
@@ -119,7 +124,9 @@ what fills the conversations (tokens added; each is then re-read every reply)
 schliffe cut ~191k tokens of command/MCP/image output (19% of what that output would have been) — 0.1% of the total cost directly
 ```
 
-Costs are weighted by relative price (cache re-read 0.1×, new input 1.25×, output 5×); images count by billed pixels, not by the size of their base64.
+Costs are weighted by relative price, per model and cache lifetime: cache re-read 0.1× (0.05× on Opus 5.5, 0.025× on Fable 5.1), cache write 1.25× for 5-minute entries and 2× for 1-hour ones, output 5×. Images count by billed pixels, not by the size of their base64.
+
+A **cache rebuild** is a reply that writes the previously cached conversation again instead of re-reading it. Each one is attributed from the transcript to a compaction, a model switch, a gap longer than the cache lifetime, or none of those ("other").
 
 ## Results
 
@@ -156,6 +163,7 @@ In real sessions most tokens are the conversation itself, re-read on every turn 
 | Local MCP servers | Any stdio server you wrap | JSON-RPC proxy |
 | Pasted logs | Stack traces (Node/TS, Python, Java, .NET, Go, Rust) and app logs pasted into a prompt | Claude Code hook |
 | Long conversations | A one-time notice at 200k / 400k / 600k / 800k tokens of context | Claude Code hook |
+| Expired cache | A notice when a message rewrites a conversation whose cache expired (optionally held back first) | Claude Code hook |
 | Commit messages | Body of `git log` / `git show` summarized to one sentence | TF-IDF, no model |
 
 Commands without a rule (`ls`, `curl`, `make`...) run untouched, streaming live. For filtered commands, each captured stream has a 64 MiB buffer limit. Above it, the buffered prefix and remaining bytes pass through raw, preserving the exit code; that stream is not compressed or cached.
@@ -171,6 +179,7 @@ Before a prompt reaches the model, Schliffe checks two things (no model involved
    was copied — paste it and send. To send the original, send the same message again.
    ```
 2. **A conversation that has grown large.** Every reply re-reads the whole conversation, so past 200k tokens (and again at 400k, 600k, 800k) you get a one-line notice suggesting a new conversation or `/compact`.
+3. **A conversation whose cache expired.** After a break longer than the cache lifetime (read from each reply's usage: 1 hour on a Claude subscription by default, 5 minutes with an API key, a cloud provider or `promptCacheTtl: "5m"`), the next message can write up to the whole conversation again at the write price — in the report example above, idling past the TTL was 19% of the cost, the biggest cause of cache rebuilds. Above 100k tokens of context you get a notice saying how long it sat and how much the rewrite costs. The notice arrives as the message is sent; with `SCHLIFFE_COLD_CACHE=block` the message is held back once instead, so you can `/clear` first (sending again lets it through). `/compact` doesn't help at that point: on a cold cache its summary request re-reads the whole history. No notice right after a compaction, and when Claude Code may have compacted the conversation while you were away (its idle compaction, from 200k tokens on a 1-hour cache) the notice says so. Slash commands are never held.
 
 Messages follow the language you write in (Portuguese or English). What each kind of log keeps and drops: [`docs/pasted-logs.md`](docs/pasted-logs.md).
 
@@ -211,6 +220,8 @@ Details and the evidence behind each rule: [`specs.md`](specs.md) §4.
 | `SCHLIFFE_FILTERS_DIR` | Extra TOML rules (default `~/.schliffe/filters`) |
 | `SCHLIFFE_PROMPT_LOGS` | Pasted logs: `block` (default, copy compact version), `tip` (just a hint), `off` |
 | `SCHLIFFE_CONTEXT_WARN_AT` | Context notice thresholds in tokens (default `200000,400000,600000,800000`, `0` = off) |
+| `SCHLIFFE_COLD_CACHE` | Expired-cache notice: `warn` (default), `block` (hold the message once), `off` |
+| `SCHLIFFE_COLD_CACHE_MIN_TOKENS` | Smallest context that gets an expired-cache notice (default `100000`) |
 | `SCHLIFFE_NO_HOOK=1` | `install.sh`: skip the Claude Code hooks |
 | `SCHLIFFE_ALLOW_RELATIVE_PATH=1` | Allow relative `$PATH` entries when resolving the real binary (off by default: an untrusted repo could ship its own `git`) |
 
