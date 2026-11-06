@@ -13,12 +13,26 @@ use std::path::{Path, PathBuf};
 /// so the user can change the habits that matter (usually: session length).
 ///
 /// Costs are "cost-equivalent tokens": each token type weighted by its
-/// price relative to a fresh input token (cache read 0.1×, cache write
-/// 1.25×, output 5×). Absolute prices vary by model; the proportions are
-/// what matters here.
-const W_CACHE_READ: f64 = 0.1;
-const W_CACHE_WRITE: f64 = 1.25;
+/// price relative to a fresh input token of the same model. Cache writes are
+/// priced by TTL (`usage.cache_creation` splits them): 1.25× for 5 minutes,
+/// 2× for 1 hour. Cache reads are 0.1× except where the model's price list
+/// says otherwise (`cache_read_weight`). Output is 5× on every current model.
+pub(crate) const W_CACHE_WRITE_5M: f64 = 1.25;
+pub(crate) const W_CACHE_WRITE_1H: f64 = 2.0;
 const W_OUTPUT: f64 = 5.0;
+
+/// Cache-read price relative to the model's input price: $0.20 on a $4
+/// input for Opus 5.5, $0.25 on $10 for Fable 5.1 / Mythos 5.1, 0.1×
+/// elsewhere (Anthropic's prompt-caching price list, 2026-10).
+pub(crate) fn cache_read_weight(model: &str) -> f64 {
+    if model.contains("fable-5-1") || model.contains("mythos-5-1") {
+        0.025
+    } else if model.contains("opus-5-5") {
+        0.05
+    } else {
+        0.1
+    }
+}
 
 #[derive(Default, Clone, Copy)]
 struct Usage {
@@ -29,21 +43,49 @@ struct Usage {
     /// Part of `output` spent thinking — billed, but not kept in the
     /// conversation, so never re-read.
     thinking: u64,
+    /// `cache_read` priced at its model's re-read rate.
+    read_cost: f64,
+    /// `cache_write` priced by TTL (5-minute vs 1-hour).
+    write_cost: f64,
 }
 
 impl Usage {
+    /// One reply's `message.usage`, priced for `model`. Transcripts older
+    /// than the TTL breakdown count every write as 5-minute.
+    fn from_json(u: &Value, model: &str) -> Self {
+        let n = |k: &str| u.get(k).and_then(Value::as_u64).unwrap_or(0);
+        let cache_read = n("cache_read_input_tokens");
+        let cache_write = n("cache_creation_input_tokens");
+        let write_1h = u
+            .pointer("/cache_creation/ephemeral_1h_input_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            .min(cache_write);
+        Usage {
+            input: n("input_tokens"),
+            cache_read,
+            cache_write,
+            output: n("output_tokens"),
+            thinking: u
+                .pointer("/output_tokens_details/thinking_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            read_cost: cache_read as f64 * cache_read_weight(model),
+            write_cost: (cache_write - write_1h) as f64 * W_CACHE_WRITE_5M
+                + write_1h as f64 * W_CACHE_WRITE_1H,
+        }
+    }
     fn add(&mut self, o: &Usage) {
         self.input += o.input;
         self.cache_read += o.cache_read;
         self.cache_write += o.cache_write;
         self.output += o.output;
         self.thinking += o.thinking;
+        self.read_cost += o.read_cost;
+        self.write_cost += o.write_cost;
     }
     fn cost(&self) -> f64 {
-        self.input as f64
-            + self.cache_write as f64 * W_CACHE_WRITE
-            + self.cache_read as f64 * W_CACHE_READ
-            + self.output as f64 * W_OUTPUT
+        self.input as f64 + self.write_cost + self.read_cost + self.output as f64 * W_OUTPUT
     }
     fn context(&self) -> u64 {
         self.input + self.cache_read + self.cache_write
@@ -231,17 +273,8 @@ fn read_session(path: &Path, since: u64, sources: &mut Sources) -> Option<Sessio
                 })
                 .unwrap_or_else(|| line.len().to_string());
             if seen.insert(id) {
-                let n = |k: &str| u.get(k).and_then(Value::as_u64).unwrap_or(0);
-                let usage = Usage {
-                    input: n("input_tokens"),
-                    cache_read: n("cache_read_input_tokens"),
-                    cache_write: n("cache_creation_input_tokens"),
-                    output: n("output_tokens"),
-                    thinking: u
-                        .pointer("/output_tokens_details/thinking_tokens")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(0),
-                };
+                let model = msg.get("model").and_then(Value::as_str).unwrap_or("");
+                let usage = Usage::from_json(u, model);
                 s.responses += 1;
                 s.peak_context = s.peak_context.max(usage.context());
                 s.usage.add(&usage);
@@ -441,17 +474,16 @@ fn render(r: &Report) -> String {
         r.sessions.len(),
         r.sessions.iter().map(|s| s.responses).sum::<u64>()
     ));
-    out.push_str("(cost-equivalent tokens: cache re-read 0.1×, new input 1.25×, output 5×)\n\n");
+    out.push_str(
+        "(cost-equivalent tokens: cache re-read 0.1× (Opus 5.5 0.05×, Fable 5.1 0.025×), cache write 1.25× 5-min / 2× 1-hour, output 5×)\n\n",
+    );
 
     out.push_str("where the cost is\n");
     let parts = [
-        (
-            "re-reading the conversation (cache)",
-            r.total.cache_read as f64 * W_CACHE_READ,
-        ),
+        ("re-reading the conversation (cache)", r.total.read_cost),
         (
             "new content entering it",
-            r.total.cache_write as f64 * W_CACHE_WRITE + r.total.input as f64,
+            r.total.write_cost + r.total.input as f64,
         ),
         (
             "the model's replies",
@@ -537,7 +569,7 @@ fn truncate(s: &str, max: usize) -> String {
 /// At most three, each tied to a number in the report.
 fn tips(r: &Report, cost: f64) -> Vec<String> {
     let mut out = Vec::new();
-    let reread = r.total.cache_read as f64 * W_CACHE_READ;
+    let reread = r.total.read_cost;
     let long: Vec<&Session> = r
         .sessions
         .iter()
@@ -644,6 +676,33 @@ mod tests {
         let r = build(&dir, after_all, 1, 0);
         assert!(r.sessions.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn close(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-6
+    }
+
+    #[test]
+    fn writes_priced_by_ttl_and_reads_by_model() {
+        let u = serde_json::json!({
+            "input_tokens": 10, "cache_read_input_tokens": 100_000,
+            "cache_creation_input_tokens": 30_000, "output_tokens": 100,
+            "cache_creation": {"ephemeral_1h_input_tokens": 20_000, "ephemeral_5m_input_tokens": 10_000}
+        });
+        let opus55 = Usage::from_json(&u, "claude-opus-5-5");
+        assert!(close(opus55.read_cost, 5_000.0)); // 100k × 0.05
+        assert!(close(opus55.write_cost, 52_500.0)); // 10k × 1.25 + 20k × 2
+        assert!(close(
+            Usage::from_json(&u, "claude-opus-5").read_cost,
+            10_000.0
+        ));
+        assert!(close(
+            Usage::from_json(&u, "claude-fable-5-1").read_cost,
+            2_500.0
+        ));
+        // Transcripts without the TTL breakdown: every write is 5-minute.
+        let old = serde_json::json!({"cache_creation_input_tokens": 8_000});
+        assert!(close(Usage::from_json(&old, "").write_cost, 10_000.0));
     }
 
     #[test]
