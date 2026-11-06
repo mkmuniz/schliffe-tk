@@ -67,13 +67,15 @@ A consolidation of everything marked "left for later" across M0-M8 (previously s
 - **Log detection is rule-based.** What each kind keeps and drops is listed in `docs/pasted-logs.md`. Anything not recognized with confidence is left untouched (apart from ANSI codes and consecutive duplicate lines); blocks under 20 lines / 1.5 KB, or that wouldn't shrink to 60% or less, are never touched.
 - **Library vs. app frames are guessed by prefix** (`node_modules`, `java.`, `org.springframework.`, `System.`, `Microsoft.`…). A project whose own namespace starts like a framework would see its frames counted as library frames — still recoverable via `schliffe show`.
 - **Context size comes from the session transcript** (the latest reply's usage); the notice appears on the prompt after the threshold was crossed.
-- **The expired-cache notice can't stop the rewrite by default.** In `warn` mode it is shown while the message is already being sent — it teaches, it doesn't prevent. Only `SCHLIFFE_COLD_CACHE=block` leaves room to `/clear` or `/compact` first.
-- **Expiry is judged from the transcript only.** Requests that touch the same cache without being logged there (another client on the same account) would keep it warm unseen — the notice could then claim an expiry that didn't happen. The gap is measured from when the last reply was logged and the TTL is the longest one in use, so a notice never fires early from Schliffe's own arithmetic.
+- **The expired-cache notice can't stop the rewrite by default.** In `warn` mode it is shown while the message is already being sent — it teaches, it doesn't prevent. Only `SCHLIFFE_COLD_CACHE=block` leaves room to `/clear` first (`/compact` doesn't avoid the cost on a cold cache).
+- **Expiry is judged from the main transcript only.** The gap is measured from the last logged activity (a reply or a session recap) and the TTL is the longest one in use, but requests that re-read the cache without a line there — Claude Code's prompt suggestions, forks logged under `subagents/`, idle compaction, another client on the same account — reset its timer unseen, so a notice can occasionally claim an expiry a few minutes early (or one that didn't happen).
+- **Claude Code's idle compaction isn't visible when the notice fires.** It is applied with the next message, so on a 1-hour cache at or above its threshold (`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS`, default 200k) the notice adds that only the summary is written if it happened; `idleCompaction: false` in settings isn't read.
 - **Not native Windows** (same as the other hook).
 
 ## `schliffe report`
 
 - **Rebuild causes are attributed, not observed.** The transcript shows that the cache broke and how much was written again; the cause is inferred from what happened in between, in this order: a `compact_boundary`, a model change, a gap longer than the cache lifetime, else "other" (tool list, effort or prompt changes leave no direct trace).
+- **A context that shrinks with no compaction, switch or expiry isn't counted.** A rewind or an edited message re-reads the prefix and writes new content; Claude Code clearing old tool results mid-session looks the same, so that rebuild is undercounted rather than guessed.
 - **Prices are a table in the code** (`cache_read_weight`, TTL write weights): a model whose cache price differs from it is mis-weighted until the table is updated. Costs are in each model's input-token units, so mixing models with different base prices is approximate.
 
 ## Security
