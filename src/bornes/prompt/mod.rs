@@ -615,6 +615,8 @@ fn ago(secs: u64, pt: bool) -> String {
 
 /// The cache's cost, from the transcript: rewriting it costs the write
 /// price (by TTL), which is `ratio`× what re-reading it warm would have.
+/// Only a block leaves room to act on this message; a plain notice arrives
+/// while it is already being sent, so it says how to avoid it next time.
 fn cold_message(last: &LastReply, now: u64, blocked: bool, pt: bool) -> String {
     use crate::core::report::{W_CACHE_WRITE_1H, W_CACHE_WRITE_5M, cache_read_weight};
     let idle = ago(now.saturating_sub(last.at.unwrap_or(now)), pt);
@@ -627,23 +629,20 @@ fn cold_message(last: &LastReply, now: u64, blocked: bool, pt: bool) -> String {
     };
     let ratio = (write / cache_read_weight(&last.model)).round() as u64;
     let tokens = thousands(last.context);
-    let mut msg = if pt {
-        format!(
-            "🧊 Schliffe: a última resposta foi há {idle} e o cache desta conversa expirou (ele dura {lasts}). Este envio vai regravar até ~{tokens} tokens a {write_label}× — uns {ratio}× o custo de relê-los com o cache ativo. Se o contexto anterior já não importa, use /clear (ou /compact) antes de enviar."
-        )
-    } else {
-        format!(
-            "🧊 Schliffe: the last reply was {idle} ago and this conversation's cache has expired (it lasts {lasts}). This message will write up to ~{tokens} tokens again at {write_label}× — about {ratio}× the cost of re-reading them warm. If the earlier context no longer matters, /clear (or /compact) before sending."
-        )
-    };
-    if blocked {
-        msg.push_str(if pt {
-            " Para enviar assim mesmo, envie de novo."
-        } else {
-            " To send it anyway, send it again."
-        });
+    match (blocked, pt) {
+        (true, true) => format!(
+            "🧊 Schliffe: a última resposta foi há {idle} e o cache desta conversa expirou (ele dura {lasts}). Esta mensagem vai regravar até ~{tokens} tokens a {write_label}× — uns {ratio}× o custo de relê-los com o cache ativo. Se o contexto anterior já não importa, use /clear (ou /compact) primeiro. Para enviar assim mesmo, envie de novo."
+        ),
+        (true, false) => format!(
+            "🧊 Schliffe: the last reply was {idle} ago and this conversation's cache has expired (it lasts {lasts}). This message would write up to ~{tokens} tokens again at {write_label}× — about {ratio}× the cost of re-reading them warm. If the earlier context no longer matters, /clear (or /compact) first. To send it anyway, send it again."
+        ),
+        (false, true) => format!(
+            "🧊 Schliffe: a última resposta foi há {idle} e o cache desta conversa já tinha expirado (ele dura {lasts}), então este envio regrava até ~{tokens} tokens a {write_label}× — uns {ratio}× o custo de relê-los com o cache ativo. Ao voltar de uma pausa longa, /clear ou /compact antes de enviar evita isso (SCHLIFFE_COLD_CACHE=block segura a mensagem para dar tempo)."
+        ),
+        (false, false) => format!(
+            "🧊 Schliffe: the last reply was {idle} ago and this conversation's cache had expired (it lasts {lasts}), so this message writes up to ~{tokens} tokens again at {write_label}× — about {ratio}× the cost of re-reading them warm. Coming back from a long break, /clear or /compact before sending avoids it (SCHLIFFE_COLD_CACHE=block holds the message to give you the chance)."
+        ),
     }
-    msg
 }
 
 fn context_message(tokens: u64, pt: bool) -> String {
