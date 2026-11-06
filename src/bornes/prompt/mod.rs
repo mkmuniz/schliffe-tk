@@ -22,6 +22,11 @@ use std::process::{Command, ExitCode, Stdio};
 /// 2. **Long conversations.** Reads the session's real context size from
 ///    the transcript and, once per threshold (200k, 400k, 600k, 800k
 ///    tokens), tells the user that every reply now re-reads all of it.
+/// 3. **Cold cache.** When the last reply is older than the cache's
+///    lifetime, the next message writes the whole conversation again at
+///    the write price (the biggest single cost found in real transcripts).
+///    Says so before it happens — or, with `SCHLIFFE_COLD_CACHE=block`,
+///    holds the prompt once (sending again lets it through).
 ///
 /// Messages go to the user only (`systemMessage` / block `reason`), never
 /// into the model's context. Fail-open: any error means "let the prompt
@@ -54,6 +59,11 @@ pub fn run_user_prompt_submit() -> ExitCode {
 struct Env {
     log_mode: LogMode,
     warn_at: Vec<u64>,
+    cold: ColdMode,
+    /// Smallest context worth a cold-cache notice.
+    cold_min: u64,
+    /// Unix seconds; injected in tests.
+    now: u64,
     /// Clipboard, files and store writes. Off in tests, so they never touch
     /// the user's clipboard or ~/.schliffe.
     effects: bool,
@@ -63,6 +73,13 @@ struct Env {
 enum LogMode {
     Block,
     Tip,
+    Off,
+}
+
+#[derive(PartialEq, Clone, Copy)]
+enum ColdMode {
+    Warn,
+    Block,
     Off,
 }
 
@@ -78,9 +95,25 @@ impl Env {
             Ok(v) => v.split(',').filter_map(|n| n.trim().parse().ok()).collect(),
             Err(_) => vec![200_000, 400_000, 600_000, 800_000],
         };
+        let cold = match std::env::var("SCHLIFFE_COLD_CACHE").as_deref() {
+            Ok("block") => ColdMode::Block,
+            Ok("off") | Ok("0") => ColdMode::Off,
+            _ => ColdMode::Warn,
+        };
+        let cold_min = std::env::var("SCHLIFFE_COLD_CACHE_MIN_TOKENS")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(100_000);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         Env {
             log_mode,
             warn_at,
+            cold,
+            cold_min,
+            now,
             effects: true,
         }
     }
@@ -102,6 +135,10 @@ struct State {
     /// prompts ("ok, continua") don't, and reuse it.
     #[serde(default)]
     portuguese: Option<bool>,
+    /// Timestamp of the reply a cold-cache block was raised for — sending
+    /// again lets the prompt through.
+    #[serde(default)]
+    cold_blocked_at: u64,
 }
 
 fn state_path(session: &str) -> Option<PathBuf> {
@@ -200,13 +237,33 @@ fn handle(prompt: &str, input: &Value, state: &mut State, env: &Env) -> Option<V
     }
 
     let transcript = input.get("transcript_path").and_then(Value::as_str)?;
-    let context = context_tokens(transcript)?;
-    let level = env
-        .warn_at
-        .iter()
-        .copied()
-        .filter(|t| context >= *t)
-        .max()?;
+    let last = last_reply(transcript)?;
+    let context = last.context;
+    let level = env.warn_at.iter().copied().filter(|t| context >= *t).max();
+
+    // A slash command (/compact, /clear...) is the remedy, never the problem.
+    if env.cold != ColdMode::Off
+        && !prompt.trim_start().starts_with('/')
+        && context >= env.cold_min
+        && let Some(at) = last.at
+        && env.now.saturating_sub(at) > last.ttl
+    {
+        // This notice already states the size; don't follow it with another.
+        state.warned_at = state.warned_at.max(level.unwrap_or(0));
+        if env.cold == ColdMode::Block {
+            if state.cold_blocked_at == at {
+                return None; // sent again: the user wants it as is
+            }
+            state.cold_blocked_at = at;
+            return Some(json!({
+                "decision": "block",
+                "reason": cold_message(&last, env.now, true, pt),
+            }));
+        }
+        return Some(json!({ "systemMessage": cold_message(&last, env.now, false, pt) }));
+    }
+
+    let level = level?;
     if level <= state.warned_at {
         return None;
     }
@@ -397,9 +454,23 @@ fn save_prompts(original: &str, compact: &str) -> Option<String> {
 
 // ---- conversation size --------------------------------------------------
 
-/// Context size of the latest model reply: input + cache read + cache write.
-/// Reads only the tail of the transcript (it can be tens of MB).
-fn context_tokens(transcript: &str) -> Option<u64> {
+/// The latest model reply of the main conversation.
+struct LastReply {
+    /// input + cache read + cache write.
+    context: u64,
+    /// When it was logged (Unix seconds) — after its request started, so a
+    /// gap measured from here never overstates how long the cache sat idle.
+    at: Option<u64>,
+    /// Lifetime of the conversation's cache entries, from the latest reply
+    /// that wrote any: the LONGEST one it used, so "expired" is only said
+    /// when every part has. Unknown counts as 1 hour, for the same reason.
+    ttl: u64,
+    model: String,
+}
+
+/// Reads only the tail of the transcript (it can be tens of MB). Subagent
+/// turns are skipped: they have their own cache and context.
+fn last_reply(transcript: &str) -> Option<LastReply> {
     let mut f = std::fs::File::open(transcript).ok()?;
     let len = f.metadata().ok()?.len();
     let tail = 4 * 1024 * 1024;
@@ -407,14 +478,55 @@ fn context_tokens(transcript: &str) -> Option<u64> {
     let mut buf = Vec::new();
     f.read_to_end(&mut buf).ok()?;
     let text = String::from_utf8_lossy(&buf);
-    text.lines().rev().find_map(|line| {
-        let v: Value = serde_json::from_str(line).ok()?;
-        let u = v.pointer("/message/usage")?;
+    let mut found: Option<LastReply> = None;
+    for line in text.lines().rev() {
+        let Ok(v) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if v.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+            continue;
+        }
+        let Some(u) = v.pointer("/message/usage") else {
+            continue;
+        };
+        let model = v
+            .pointer("/message/model")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if model == "<synthetic>" {
+            continue;
+        }
         let n = |k: &str| u.get(k).and_then(Value::as_u64).unwrap_or(0);
-        let total =
-            n("input_tokens") + n("cache_read_input_tokens") + n("cache_creation_input_tokens");
-        (total > 0).then_some(total)
-    })
+        let written = n("cache_creation_input_tokens");
+        let reply = match found.as_mut() {
+            Some(r) => r,
+            None => {
+                let context = n("input_tokens") + n("cache_read_input_tokens") + written;
+                if context == 0 {
+                    continue;
+                }
+                found.insert(LastReply {
+                    context,
+                    at: v
+                        .get("timestamp")
+                        .and_then(Value::as_str)
+                        .and_then(crate::core::report::parse_iso),
+                    ttl: 3_600,
+                    model: model.to_string(),
+                })
+            }
+        };
+        if written > 0 {
+            let one_hour = u
+                .pointer("/cache_creation/ephemeral_1h_input_tokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+                > 0;
+            reply.ttl = if one_hour { 3_600 } else { 300 };
+            break;
+        }
+    }
+    found
 }
 
 // ---- messages -------------------------------------------------------------
@@ -490,6 +602,50 @@ fn tip_message(o: &Offer, pt: bool) -> String {
     }
 }
 
+fn ago(secs: u64, pt: bool) -> String {
+    let (m, h, d) = (secs / 60, secs / 3_600, secs / 86_400);
+    match (d, h, m % 60, pt) {
+        (2.., _, _, true) => format!("{d} dias"),
+        (2.., _, _, false) => format!("{d} days"),
+        (_, 1.., 0, _) => format!("{h} h"),
+        (_, 1.., rest, _) => format!("{h} h {rest:02} min"),
+        _ => format!("{m} min"),
+    }
+}
+
+/// The cache's cost, from the transcript: rewriting it costs the write
+/// price (by TTL), which is `ratio`× what re-reading it warm would have.
+fn cold_message(last: &LastReply, now: u64, blocked: bool, pt: bool) -> String {
+    use crate::core::report::{W_CACHE_WRITE_1H, W_CACHE_WRITE_5M, cache_read_weight};
+    let idle = ago(now.saturating_sub(last.at.unwrap_or(now)), pt);
+    let (lasts, write, write_label) = if last.ttl >= 3_600 {
+        ("1 h", W_CACHE_WRITE_1H, "2")
+    } else if pt {
+        ("5 min", W_CACHE_WRITE_5M, "1,25")
+    } else {
+        ("5 min", W_CACHE_WRITE_5M, "1.25")
+    };
+    let ratio = (write / cache_read_weight(&last.model)).round() as u64;
+    let tokens = thousands(last.context);
+    let mut msg = if pt {
+        format!(
+            "🧊 Schliffe: a última resposta foi há {idle} e o cache desta conversa expirou (ele dura {lasts}). Este envio vai regravar até ~{tokens} tokens a {write_label}× — uns {ratio}× o custo de relê-los com o cache ativo. Se o contexto anterior já não importa, use /clear (ou /compact) antes de enviar."
+        )
+    } else {
+        format!(
+            "🧊 Schliffe: the last reply was {idle} ago and this conversation's cache has expired (it lasts {lasts}). This message will write up to ~{tokens} tokens again at {write_label}× — about {ratio}× the cost of re-reading them warm. If the earlier context no longer matters, /clear (or /compact) before sending."
+        )
+    };
+    if blocked {
+        msg.push_str(if pt {
+            " Para enviar assim mesmo, envie de novo."
+        } else {
+            " To send it anyway, send it again."
+        });
+    }
+    msg
+}
+
 fn context_message(tokens: u64, pt: bool) -> String {
     if pt {
         format!(
@@ -512,8 +668,141 @@ mod tests {
         Env {
             log_mode: mode,
             warn_at: vec![200_000, 400_000],
+            cold: ColdMode::Warn,
+            cold_min: 100_000,
+            now: 0,
             effects: false,
         }
+    }
+
+    const T0: &str = "2026-10-01T10:00:00.000Z";
+    const PT_PROMPT: &str = "pode continuar com isso para mim";
+
+    fn t0() -> u64 {
+        crate::core::report::parse_iso(T0).unwrap()
+    }
+
+    fn cold_env(cold: ColdMode, idle_secs: u64) -> Env {
+        Env {
+            warn_at: Vec::new(),
+            cold,
+            now: t0() + idle_secs,
+            ..env(LogMode::Off)
+        }
+    }
+
+    /// A transcript whose last main reply was at T0, plus extra lines after it.
+    fn transcript(
+        name: &str,
+        model: &str,
+        read: u64,
+        write_1h: u64,
+        write_5m: u64,
+        extra: &str,
+    ) -> (PathBuf, Value) {
+        let dir = std::env::temp_dir().join(format!("schliffe-cold-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let t = dir.join("t.jsonl");
+        let reply = json!({"type":"assistant","timestamp":T0,"message":{"id":"r","model":model,"usage":{
+            "input_tokens":1,"cache_read_input_tokens":read,"cache_creation_input_tokens":write_1h + write_5m,
+            "cache_creation":{"ephemeral_1h_input_tokens":write_1h,"ephemeral_5m_input_tokens":write_5m}}}});
+        std::fs::write(&t, format!("{reply}\n{extra}")).unwrap();
+        let input = json!({"transcript_path": t.to_str().unwrap()});
+        (dir, input)
+    }
+
+    #[test]
+    fn cold_cache_notice_only_after_the_ttl() {
+        let (dir, input) = transcript("ttl", "claude-opus-5-5", 300_000, 10_000, 0, "");
+        let mut state = State::default();
+        let warm = cold_env(ColdMode::Warn, 3_000);
+        assert!(handle(PT_PROMPT, &input, &mut state, &warm).is_none());
+        let cold = cold_env(ColdMode::Warn, 7_200);
+        let r = handle(PT_PROMPT, &input, &mut state, &cold).unwrap();
+        let msg = r["systemMessage"].as_str().unwrap();
+        assert!(
+            msg.contains("há 2 h e") && msg.contains("~310k") && msg.contains("a 2×"),
+            "{msg}"
+        );
+        assert_eq!(ago(18 * 3_600 + 38 * 60, true), "18 h 38 min");
+        assert!(msg.contains("uns 40×"), "{msg}"); // 2× write vs 0.05× Opus 5.5 read
+        assert!(
+            msg.contains("até ~310k"),
+            "never claims the full rewrite: {msg}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn five_minute_cache_expires_sooner_and_costs_less() {
+        let (dir, input) = transcript("5m", "claude-sonnet-5", 200_000, 0, 5_000, "");
+        let r = handle(
+            "what is the status of this build",
+            &input,
+            &mut State::default(),
+            &cold_env(ColdMode::Warn, 600),
+        )
+        .unwrap();
+        let msg = r["systemMessage"].as_str().unwrap();
+        assert!(
+            msg.contains("5 min") && msg.contains("1.25×") && msg.contains("13×"),
+            "{msg}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn small_contexts_and_slash_commands_stay_quiet() {
+        let (dir, input) = transcript("quiet", "claude-opus-5", 50_000, 1_000, 0, "");
+        let cold = cold_env(ColdMode::Block, 86_400);
+        assert!(handle(PT_PROMPT, &input, &mut State::default(), &cold).is_none());
+        let (dir2, big) = transcript("slash", "claude-opus-5", 500_000, 1_000, 0, "");
+        assert!(handle("/compact", &big, &mut State::default(), &cold).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir2);
+    }
+
+    #[test]
+    fn block_mode_holds_the_prompt_once() {
+        let (dir, input) = transcript("block", "claude-opus-5", 500_000, 1_000, 0, "");
+        let mut state = State::default();
+        let cold = cold_env(ColdMode::Block, 86_400 * 3);
+        let r = handle(PT_PROMPT, &input, &mut state, &cold).unwrap();
+        assert_eq!(r["decision"], "block");
+        let reason = r["reason"].as_str().unwrap();
+        assert!(
+            reason.contains("3 dias") && reason.contains("envie de novo"),
+            "{reason}"
+        );
+        assert!(handle(PT_PROMPT, &input, &mut state, &cold).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_recent_subagent_reply_does_not_warm_the_main_cache() {
+        let sub = json!({"type":"assistant","isSidechain":true,"timestamp":"2026-10-01T13:59:00.000Z","message":{"model":"claude-opus-5","usage":{"input_tokens":1,"cache_read_input_tokens":9_000,"cache_creation_input_tokens":0}}});
+        let (dir, input) = transcript(
+            "sidechain",
+            "claude-opus-5",
+            450_000,
+            1_000,
+            0,
+            &format!("{sub}\n"),
+        );
+        let mut state = State::default();
+        let r = handle(
+            PT_PROMPT,
+            &input,
+            &mut state,
+            &Env {
+                warn_at: vec![200_000, 400_000],
+                ..cold_env(ColdMode::Warn, 4 * 3_600)
+            },
+        )
+        .unwrap();
+        assert!(r["systemMessage"].as_str().unwrap().contains("~451k"));
+        assert_eq!(state.warned_at, 400_000); // the size notice isn't repeated after it
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn trace(lines: usize) -> String {

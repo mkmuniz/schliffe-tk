@@ -584,7 +584,7 @@ fn png_dimensions(b64: &str) -> Option<(u32, u32)> {
 
 /// `2026-09-27T09:24:06.123Z` → Unix seconds (UTC). No timezone offsets
 /// other than `Z` appear in transcripts.
-fn parse_iso(s: &str) -> Option<u64> {
+pub(crate) fn parse_iso(s: &str) -> Option<u64> {
     let (date, time) = s.split_once('T')?;
     let mut d = date.split('-').map(|p| p.parse::<i64>().ok());
     let (y, m, day) = (d.next()??, d.next()??, d.next()??);
