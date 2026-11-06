@@ -48,8 +48,15 @@ pub fn run_user_prompt_submit() -> ExitCode {
     let mut state = State::load(session);
 
     let response = handle(prompt, &input, &mut state, &Env::from_process());
-    state.save(session);
-    if let Some(r) = response {
+    let saved = state.save(session);
+    // A block is only lifted by remembering it; if that can't be saved, the
+    // same prompt would be held forever — let it through instead.
+    let blocks = response
+        .as_ref()
+        .is_some_and(|r| r.get("decision").and_then(Value::as_str) == Some("block"));
+    if let Some(r) = response
+        && (saved || !blocks)
+    {
         println!("{r}");
     }
     ExitCode::SUCCESS
@@ -62,6 +69,10 @@ struct Env {
     cold: ColdMode,
     /// Smallest context worth a cold-cache notice.
     cold_min: u64,
+    /// Claude Code's own idle-compaction threshold: from here, on a 1-hour
+    /// cache, it may have replaced the conversation with a summary while the
+    /// user was away (not visible in the transcript until the next message).
+    idle_compact_min: u64,
     /// Unix seconds; injected in tests.
     now: u64,
     /// Clipboard, files and store writes. Off in tests, so they never touch
@@ -104,6 +115,11 @@ impl Env {
             .ok()
             .and_then(|v| v.trim().parse().ok())
             .unwrap_or(100_000);
+        // Claude Code raises values below 100k to 100k; 200k is its default.
+        let idle_compact_min = std::env::var("CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS")
+            .ok()
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .map_or(200_000, |v| v.max(100_000));
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -113,6 +129,7 @@ impl Env {
             warn_at,
             cold,
             cold_min,
+            idle_compact_min,
             now,
             effects: true,
         }
@@ -168,15 +185,15 @@ impl State {
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default()
     }
-    fn save(&self, session: &str) {
-        if let Some(p) = state_path(session) {
-            if let Some(dir) = p.parent() {
-                let _ = std::fs::create_dir_all(dir);
-            }
-            if let Ok(s) = serde_json::to_string(self) {
-                let _ = write_private(&p, s.as_bytes());
-            }
+    /// `false` when the state couldn't be written.
+    fn save(&self, session: &str) -> bool {
+        let Some(p) = state_path(session) else {
+            return false;
+        };
+        if let Some(dir) = p.parent() {
+            let _ = std::fs::create_dir_all(dir);
         }
+        serde_json::to_string(self).is_ok_and(|s| write_private(&p, s.as_bytes()).is_ok())
     }
 }
 
@@ -203,6 +220,9 @@ fn handle(prompt: &str, input: &Value, state: &mut State, env: &Env) -> Option<V
         state.offered = None;
     }
 
+    // Set when this prompt is a resend after a pasted-log block: the user was
+    // promised it goes through, so nothing may hold it a second time.
+    let mut log_resend = false;
     if env.log_mode != LogMode::Off
         && let Some(offer) = build_offer(prompt, input.get("cwd").and_then(Value::as_str), |s| {
             if env.effects {
@@ -234,6 +254,7 @@ fn handle(prompt: &str, input: &Value, state: &mut State, env: &Env) -> Option<V
         }
         // Same prompt sent again after a block: the user wants the original.
         state.blocked_hash.clear();
+        log_resend = true;
     }
 
     let transcript = input.get("transcript_path").and_then(Value::as_str)?;
@@ -241,26 +262,28 @@ fn handle(prompt: &str, input: &Value, state: &mut State, env: &Env) -> Option<V
     let context = last.context;
     let level = env.warn_at.iter().copied().filter(|t| context >= *t).max();
 
-    // A slash command (/compact, /clear...) is the remedy, never the problem.
     if env.cold != ColdMode::Off
-        && !prompt.trim_start().starts_with('/')
+        && !is_command(prompt)
         && context >= env.cold_min
         && let Some(at) = last.at
         && env.now.saturating_sub(at) > last.ttl
     {
         // This notice already states the size; don't follow it with another.
         state.warned_at = state.warned_at.max(level.unwrap_or(0));
-        if env.cold == ColdMode::Block {
+        let maybe_compacted = last.ttl >= 3_600 && context >= env.idle_compact_min;
+        if env.cold == ColdMode::Block && !log_resend {
             if state.cold_blocked_at == at {
                 return None; // sent again: the user wants it as is
             }
             state.cold_blocked_at = at;
             return Some(json!({
                 "decision": "block",
-                "reason": cold_message(&last, env.now, true, pt),
+                "reason": cold_message(&last, env.now, true, maybe_compacted, pt),
             }));
         }
-        return Some(json!({ "systemMessage": cold_message(&last, env.now, false, pt) }));
+        return Some(json!({
+            "systemMessage": cold_message(&last, env.now, false, maybe_compacted, pt)
+        }));
     }
 
     let level = level?;
@@ -269,6 +292,17 @@ fn handle(prompt: &str, input: &Value, state: &mut State, env: &Env) -> Option<V
     }
     state.warned_at = level;
     Some(json!({ "systemMessage": context_message(context, pt) }))
+}
+
+/// A slash command (`/compact`, `/clear`, `/plugin:cmd args`) — the remedy,
+/// never the problem. A prompt that starts with a path (`/Users/x/a.rs why?`)
+/// is not one.
+fn is_command(prompt: &str) -> bool {
+    prompt
+        .split_whitespace()
+        .next()
+        .and_then(|w| w.strip_prefix('/'))
+        .is_some_and(|rest| !rest.is_empty() && !rest.contains('/'))
 }
 
 // ---- pasted logs ----------------------------------------------------------
@@ -458,18 +492,23 @@ fn save_prompts(original: &str, compact: &str) -> Option<String> {
 struct LastReply {
     /// input + cache read + cache write.
     context: u64,
-    /// When it was logged (Unix seconds) — after its request started, so a
-    /// gap measured from here never overstates how long the cache sat idle.
+    /// The last time the transcript shows the conversation's cache in use:
+    /// the reply, or a later session recap that re-read it (Unix seconds).
+    /// Both are logged after their request started, so a gap measured from
+    /// here never overstates how long the cache sat idle.
     at: Option<u64>,
-    /// Lifetime of the conversation's cache entries, from the latest reply
-    /// that wrote any: the LONGEST one it used, so "expired" is only said
-    /// when every part has. Unknown counts as 1 hour, for the same reason.
+    /// Lifetime of the conversation's cache entries: the LONGEST any reply in
+    /// the tail wrote with (an older 1-hour write can still hold most of it),
+    /// so "expired" is only said when every part has. A write without the TTL
+    /// breakdown, or no write at all, counts as 1 hour for the same reason.
     ttl: u64,
     model: String,
 }
 
 /// Reads only the tail of the transcript (it can be tens of MB). Subagent
-/// turns are skipped: they have their own cache and context.
+/// turns are skipped: they have their own cache and context. `None` right
+/// after a compaction: the conversation is now a summary, and the old
+/// reply's context and cache no longer describe it.
 fn last_reply(transcript: &str) -> Option<LastReply> {
     let mut f = std::fs::File::open(transcript).ok()?;
     let len = f.metadata().ok()?.len();
@@ -479,11 +518,26 @@ fn last_reply(transcript: &str) -> Option<LastReply> {
     f.read_to_end(&mut buf).ok()?;
     let text = String::from_utf8_lossy(&buf);
     let mut found: Option<LastReply> = None;
+    let mut recap: Option<u64> = None;
+    // `Some(true)` while every write seen is 5-minute only.
+    let mut only_5m: Option<bool> = None;
     for line in text.lines().rev() {
         let Ok(v) = serde_json::from_str::<Value>(line) else {
             continue;
         };
         if v.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+            continue;
+        }
+        let ts = v
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .and_then(crate::core::report::parse_iso);
+        if found.is_none() && v.get("type").and_then(Value::as_str) == Some("system") {
+            match v.get("subtype").and_then(Value::as_str) {
+                Some("compact_boundary") => return None,
+                Some("away_summary") => recap = recap.max(ts),
+                _ => {}
+            }
             continue;
         }
         let Some(u) = v.pointer("/message/usage") else {
@@ -498,35 +552,41 @@ fn last_reply(transcript: &str) -> Option<LastReply> {
         }
         let n = |k: &str| u.get(k).and_then(Value::as_u64).unwrap_or(0);
         let written = n("cache_creation_input_tokens");
-        let reply = match found.as_mut() {
-            Some(r) => r,
-            None => {
-                let context = n("input_tokens") + n("cache_read_input_tokens") + written;
-                if context == 0 {
-                    continue;
-                }
-                found.insert(LastReply {
-                    context,
-                    at: v
-                        .get("timestamp")
-                        .and_then(Value::as_str)
-                        .and_then(crate::core::report::parse_iso),
-                    ttl: 3_600,
-                    model: model.to_string(),
-                })
+        if found.is_none() {
+            let context = n("input_tokens") + n("cache_read_input_tokens") + written;
+            if context == 0 {
+                continue;
             }
-        };
+            found = Some(LastReply {
+                context,
+                at: ts.max(recap),
+                ttl: 3_600,
+                model: model.to_string(),
+            });
+        }
         if written > 0 {
-            let one_hour = u
-                .pointer("/cache_creation/ephemeral_1h_input_tokens")
-                .and_then(Value::as_u64)
-                .unwrap_or(0)
-                > 0;
-            reply.ttl = if one_hour { 3_600 } else { 300 };
-            break;
+            let split = |k: &str| {
+                u.pointer(&format!("/cache_creation/{k}"))
+                    .and_then(Value::as_u64)
+            };
+            match (
+                split("ephemeral_1h_input_tokens"),
+                split("ephemeral_5m_input_tokens"),
+            ) {
+                // Only clear 5-minute evidence keeps looking further back.
+                (Some(0), Some(1..)) => only_5m = Some(true),
+                _ => {
+                    only_5m = Some(false);
+                    break;
+                }
+            }
         }
     }
-    found
+    let mut reply = found?;
+    if only_5m == Some(true) {
+        reply.ttl = 300;
+    }
+    Some(reply)
 }
 
 // ---- messages -------------------------------------------------------------
@@ -617,7 +677,17 @@ fn ago(secs: u64, pt: bool) -> String {
 /// price (by TTL), which is `ratio`× what re-reading it warm would have.
 /// Only a block leaves room to act on this message; a plain notice arrives
 /// while it is already being sent, so it says how to avoid it next time.
-fn cold_message(last: &LastReply, now: u64, blocked: bool, pt: bool) -> String {
+/// `/clear` is the remedy, not `/compact`: on a cold cache the summary
+/// request itself re-reads the whole history. `maybe_compacted`: Claude Code
+/// may have compacted the conversation while idle, so only a summary is
+/// written — which the transcript can't show yet.
+fn cold_message(
+    last: &LastReply,
+    now: u64,
+    blocked: bool,
+    maybe_compacted: bool,
+    pt: bool,
+) -> String {
     use crate::core::report::{W_CACHE_WRITE_1H, W_CACHE_WRITE_5M, cache_read_weight};
     let idle = ago(now.saturating_sub(last.at.unwrap_or(now)), pt);
     let (lasts, write, write_label) = if last.ttl >= 3_600 {
@@ -629,18 +699,27 @@ fn cold_message(last: &LastReply, now: u64, blocked: bool, pt: bool) -> String {
     };
     let ratio = (write / cache_read_weight(&last.model)).round() as u64;
     let tokens = thousands(last.context);
+    let caveat = match (maybe_compacted, pt) {
+        (false, _) => "",
+        (true, true) => {
+            " Se o Claude Code compactou a conversa enquanto você estava fora, só o resumo é regravado."
+        }
+        (true, false) => {
+            " If Claude Code compacted the conversation while you were away, only the summary is written."
+        }
+    };
     match (blocked, pt) {
         (true, true) => format!(
-            "🧊 Schliffe: a última resposta foi há {idle} e o cache desta conversa expirou (ele dura {lasts}). Esta mensagem vai regravar até ~{tokens} tokens a {write_label}× — uns {ratio}× o custo de relê-los com o cache ativo. Se o contexto anterior já não importa, use /clear (ou /compact) primeiro. Para enviar assim mesmo, envie de novo."
+            "🧊 Schliffe: a última atividade desta conversa foi há {idle} e o cache dela expirou (ele dura {lasts}). Esta mensagem vai regravar até ~{tokens} tokens a {write_label}× — uns {ratio}× o custo de relê-los com o cache ativo.{caveat} Se o contexto anterior já não importa, use /clear primeiro (o /compact também relê o histórico inteiro com o cache frio). Para enviar assim mesmo, envie de novo."
         ),
         (true, false) => format!(
-            "🧊 Schliffe: the last reply was {idle} ago and this conversation's cache has expired (it lasts {lasts}). This message would write up to ~{tokens} tokens again at {write_label}× — about {ratio}× the cost of re-reading them warm. If the earlier context no longer matters, /clear (or /compact) first. To send it anyway, send it again."
+            "🧊 Schliffe: the last activity in this conversation was {idle} ago and its cache has expired (it lasts {lasts}). This message would write up to ~{tokens} tokens again at {write_label}× — about {ratio}× the cost of re-reading them warm.{caveat} If the earlier context no longer matters, /clear first (/compact also re-reads the whole history on a cold cache). To send it anyway, send it again."
         ),
         (false, true) => format!(
-            "🧊 Schliffe: a última resposta foi há {idle} e o cache desta conversa já tinha expirado (ele dura {lasts}), então este envio regrava até ~{tokens} tokens a {write_label}× — uns {ratio}× o custo de relê-los com o cache ativo. Ao voltar de uma pausa longa, /clear ou /compact antes de enviar evita isso (SCHLIFFE_COLD_CACHE=block segura a mensagem para dar tempo)."
+            "🧊 Schliffe: a última atividade desta conversa foi há {idle} e o cache dela já tinha expirado (ele dura {lasts}), então este envio regrava até ~{tokens} tokens a {write_label}× — uns {ratio}× o custo de relê-los com o cache ativo.{caveat} Ao voltar de uma pausa longa, /clear (ou uma conversa nova) antes de enviar evita isso; o /compact não, porque com o cache frio ele relê o histórico inteiro. SCHLIFFE_COLD_CACHE=block segura a mensagem para dar tempo."
         ),
         (false, false) => format!(
-            "🧊 Schliffe: the last reply was {idle} ago and this conversation's cache had expired (it lasts {lasts}), so this message writes up to ~{tokens} tokens again at {write_label}× — about {ratio}× the cost of re-reading them warm. Coming back from a long break, /clear or /compact before sending avoids it (SCHLIFFE_COLD_CACHE=block holds the message to give you the chance)."
+            "🧊 Schliffe: the last activity in this conversation was {idle} ago and its cache had expired (it lasts {lasts}), so this message writes up to ~{tokens} tokens again at {write_label}× — about {ratio}× the cost of re-reading them warm.{caveat} Coming back from a long break, /clear (or a new conversation) before sending avoids it; /compact doesn't, since on a cold cache it re-reads the whole history. SCHLIFFE_COLD_CACHE=block holds the message to give you the chance."
         ),
     }
 }
@@ -669,6 +748,7 @@ mod tests {
             warn_at: vec![200_000, 400_000],
             cold: ColdMode::Warn,
             cold_min: 100_000,
+            idle_compact_min: 200_000,
             now: 0,
             effects: false,
         }
@@ -725,6 +805,9 @@ mod tests {
         );
         assert_eq!(ago(18 * 3_600 + 38 * 60, true), "18 h 38 min");
         assert!(msg.contains("uns 40×"), "{msg}"); // 2× write vs 0.05× Opus 5.5 read
+        // 310k on a 1-hour cache: Claude Code may have compacted it while idle.
+        assert!(msg.contains("só o resumo é regravado"), "{msg}");
+        assert!(msg.contains("o /compact não"), "{msg}");
         assert!(
             msg.contains("até ~310k"),
             "never claims the full rewrite: {msg}"
@@ -774,6 +857,129 @@ mod tests {
             "{reason}"
         );
         assert!(handle(PT_PROMPT, &input, &mut state, &cold).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn line_at(kind: &str, extra: Value, ts: &str) -> String {
+        let mut v = json!({"type": kind, "timestamp": ts});
+        if let (Some(o), Some(x)) = (v.as_object_mut(), extra.as_object()) {
+            o.extend(x.clone());
+        }
+        format!("{v}\n")
+    }
+
+    #[test]
+    fn a_compaction_after_the_reply_silences_every_notice() {
+        let boundary = line_at(
+            "system",
+            json!({"subtype": "compact_boundary"}),
+            "2026-10-01T12:00:00.000Z",
+        );
+        let summary = line_at(
+            "user",
+            json!({"isCompactSummary": true, "message": {"role": "user", "content": "summary"}}),
+            "2026-10-01T10:55:00.000Z",
+        );
+        let (dir, input) = transcript(
+            "compacted",
+            "claude-opus-5",
+            400_000,
+            1_000,
+            0,
+            &(boundary + &summary),
+        );
+        let env = Env {
+            warn_at: vec![200_000],
+            ..cold_env(ColdMode::Block, 7_200)
+        };
+        assert!(handle(PT_PROMPT, &input, &mut State::default(), &env).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_session_recap_keeps_the_cache_warm() {
+        let recap = line_at(
+            "system",
+            json!({"subtype": "away_summary"}),
+            "2026-10-01T10:55:00.000Z",
+        );
+        let (dir, input) = transcript("recap", "claude-opus-5", 300_000, 1_000, 0, &recap);
+        let at_70_min = cold_env(ColdMode::Warn, 70 * 60); // 15 min after the recap
+        assert!(handle(PT_PROMPT, &input, &mut State::default(), &at_70_min).is_none());
+        let at_2_h = cold_env(ColdMode::Warn, 2 * 3_600);
+        assert!(handle(PT_PROMPT, &input, &mut State::default(), &at_2_h).is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unknown_or_older_one_hour_writes_keep_the_long_ttl() {
+        let dir =
+            std::env::temp_dir().join(format!("schliffe-cold-{}-ttl-tail", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let t = dir.join("t.jsonl");
+        let input = json!({"transcript_path": t.to_str().unwrap()});
+        let reply = |ts: &str, usage: Value| {
+            line_at(
+                "assistant",
+                json!({"message": {"model": "claude-opus-5", "usage": usage}}),
+                ts,
+            )
+        };
+        let twenty_min = cold_env(ColdMode::Warn, 20 * 60);
+        // No TTL breakdown at all: unknown counts as 1 hour.
+        std::fs::write(
+            &t,
+            reply(
+                T0,
+                json!({"cache_read_input_tokens": 300_000, "cache_creation_input_tokens": 5_000}),
+            ),
+        )
+        .unwrap();
+        assert!(handle(PT_PROMPT, &input, &mut State::default(), &twenty_min).is_none());
+        // The bulk written with 1 h earlier, a small 5-minute write last.
+        let earlier = reply(
+            "2026-10-01T09:50:00.000Z",
+            json!({"cache_read_input_tokens": 10_000, "cache_creation_input_tokens": 290_000,
+                   "cache_creation": {"ephemeral_1h_input_tokens": 290_000, "ephemeral_5m_input_tokens": 0}}),
+        );
+        let last = reply(
+            T0,
+            json!({"cache_read_input_tokens": 300_000, "cache_creation_input_tokens": 3_000,
+                   "cache_creation": {"ephemeral_1h_input_tokens": 0, "ephemeral_5m_input_tokens": 3_000}}),
+        );
+        std::fs::write(&t, earlier + &last).unwrap();
+        assert!(handle(PT_PROMPT, &input, &mut State::default(), &twenty_min).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_command_like_prompts_count_as_commands() {
+        assert!(is_command("/compact"));
+        assert!(is_command("  /review-pr 123"));
+        assert!(is_command("/context-mode:ctx-stats"));
+        assert!(!is_command("/Users/me/src/main.rs por que isso falha?"));
+        assert!(!is_command("/"));
+        assert!(!is_command("compacte isso"));
+    }
+
+    #[test]
+    fn a_prompt_resent_after_a_log_block_is_not_held_again() {
+        let (dir, mut input) = transcript("log-resend", "claude-opus-5", 500_000, 1_000, 0, "");
+        let prompt = pasted(&trace(60));
+        input["prompt"] = json!(prompt);
+        let env = Env {
+            log_mode: LogMode::Block,
+            ..cold_env(ColdMode::Block, 86_400)
+        };
+        let mut state = State::default();
+        let first = handle(&prompt, &input, &mut state, &env).unwrap();
+        assert!(first["reason"].as_str().unwrap().contains("✂️")); // the log block
+        let second = handle(&prompt, &input, &mut state, &env).unwrap();
+        assert!(
+            second.get("decision").is_none(),
+            "promised to go through: {second}"
+        );
+        assert!(second["systemMessage"].as_str().unwrap().contains("🧊"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
