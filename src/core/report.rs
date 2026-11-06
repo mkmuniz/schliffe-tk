@@ -199,22 +199,30 @@ impl Chain {
                 .tokens
                 .saturating_sub(usage.cache_read)
                 .min(usage.cache_write);
-            (rebuilt >= REBUILD_MIN_TOKENS).then(|| {
-                let gap = match (start, p.start) {
-                    (Some(now), Some(before)) => now.saturating_sub(before),
-                    _ => 0,
-                };
-                let cause = if self.compacted {
-                    Cause::Compaction
-                } else if p.model != model {
-                    Cause::ModelSwitch
-                } else if gap > self.ttl.unwrap_or(DEFAULT_TTL_SECS) {
-                    Cause::Idle
-                } else {
-                    Cause::Other
-                };
-                (cause, rebuilt)
-            })
+            if rebuilt < REBUILD_MIN_TOKENS {
+                return None;
+            }
+            let gap = match (start, p.start) {
+                (Some(now), Some(before)) => now.saturating_sub(before),
+                _ => 0,
+            };
+            // A context that shrank with no compaction, switch or expiry is a
+            // rewind or an edited message: its prefix was re-read and what it
+            // wrote is new, so nothing broke (Claude Code clearing old tool
+            // results looks the same and is undercounted rather than guessed).
+            let shrank = usage.cache_read + usage.cache_write + REBUILD_MIN_TOKENS < p.tokens;
+            let cause = if self.compacted {
+                Cause::Compaction
+            } else if p.model != model {
+                Cause::ModelSwitch
+            } else if gap > self.ttl.unwrap_or(DEFAULT_TTL_SECS) {
+                Cause::Idle
+            } else if shrank {
+                return None;
+            } else {
+                Cause::Other
+            };
+            Some((cause, rebuilt))
         });
         if write_ttl.is_some() {
             self.ttl = write_ttl;
@@ -380,8 +388,14 @@ fn read_session(
         // Subagent turns have their own cache; only the main chain's is followed.
         let main = e.get("isSidechain").and_then(Value::as_bool) != Some(true);
         let kind = e.get("type").and_then(Value::as_str);
-        if main && kind == Some("user") {
-            chain.pending_start = ts.or(chain.pending_start);
+        // A compact summary line is written after the prompt it answers but
+        // carries the time the summary was made (up to days earlier): skip it,
+        // and keep the latest time seen in any case.
+        if main
+            && kind == Some("user")
+            && e.get("isCompactSummary").and_then(Value::as_bool) != Some(true)
+        {
+            chain.pending_start = ts.max(chain.pending_start);
         }
         if main
             && kind == Some("system")
@@ -620,7 +634,9 @@ fn pct(part: f64, whole: f64) -> String {
         "—".into()
     } else {
         let p = part * 100.0 / whole;
-        if p > 0.0 && p < 10.0 {
+        if p > 0.0 && p < 0.05 {
+            "<0.1%".into() // a non-zero share never shows as 0.0%
+        } else if p > 0.0 && p < 10.0 {
             format!("{p:.1}%")
         } else {
             format!("{p:.0}%")
@@ -681,8 +697,9 @@ fn render(r: &Report) -> String {
                 continue;
             }
             out.push_str(&format!(
-                "  {label:<42} {:>4} replies {:>7} tokens {:>8}  {:>4}\n",
+                "  {label:<42} {:>4} {:<7} {:>7} tokens {:>8}  {:>4}\n",
                 b.replies,
+                if b.replies == 1 { "reply" } else { "replies" },
                 human(b.tokens as f64),
                 human(b.cost),
                 pct(b.cost, cost)
@@ -970,6 +987,80 @@ mod tests {
         assert_eq!(r.rebuilds.get(Cause::Idle).replies, 0); // r3 is outside
         assert_eq!(r.rebuilds.get(Cause::ModelSwitch).tokens, 50_000); // r4 vs r3
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn session_dir(name: &str, lines: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("schliffe-report-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let p = dir.join("-Users-jane-acme");
+        std::fs::create_dir_all(&p).unwrap();
+        std::fs::write(p.join("s.jsonl"), lines).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_compact_summarys_old_timestamp_is_not_a_request_start() {
+        // Idle compaction: the summary line is written after the prompt but
+        // stamped a day earlier. The later break (2 min after) is not idle.
+        let o = "claude-opus-5";
+        let mut t = String::new();
+        t += &reply_at("b1", "2026-10-01T10:00:00.000Z", o, 0, 50_000);
+        t += &user_at("2026-10-02T16:00:00.000Z");
+        t += &line(
+            serde_json::json!({"type":"system","subtype":"compact_boundary","timestamp":"2026-10-02T16:00:01.000Z"}),
+        );
+        t += &line(
+            serde_json::json!({"type":"user","isCompactSummary":true,"timestamp":"2026-10-01T10:55:00.000Z","message":{"role":"user","content":"summary"}}),
+        );
+        t += &reply_at("b2", "2026-10-02T16:00:30.000Z", o, 4_000, 20_000);
+        t += &user_at("2026-10-02T16:02:00.000Z");
+        t += &reply_at("b3", "2026-10-02T16:02:20.000Z", o, 4_000, 30_000);
+        let dir = session_dir("stale-summary", &t);
+        let r = build(&dir, 0, 7, 0);
+        assert_eq!(r.rebuilds.get(Cause::Compaction).replies, 1);
+        assert_eq!(
+            r.rebuilds.get(Cause::Idle).replies,
+            0,
+            "b3 came 2 min after b2"
+        );
+        assert_eq!(r.rebuilds.get(Cause::Other).tokens, 20_000);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_rewind_is_new_content_unless_the_cache_expired() {
+        let o = "claude-opus-5";
+        let base = || {
+            let mut t = String::new();
+            t += &reply_at("c1", "2026-10-01T10:00:00.000Z", o, 0, 50_000);
+            t += &user_at("2026-10-01T10:01:00.000Z");
+            t += &reply_at("c2", "2026-10-01T10:01:20.000Z", o, 50_000, 100_000);
+            t += &user_at("2026-10-01T10:02:00.000Z");
+            t += &reply_at("c3", "2026-10-01T10:02:20.000Z", o, 150_000, 150_000);
+            t
+        };
+        // Rewound to after c1, with a 30k paste: prefix re-read, nothing broke.
+        let rewind = base()
+            + &user_at("2026-10-01T10:03:00.000Z")
+            + &reply_at("c4", "2026-10-01T10:03:20.000Z", o, 50_000, 30_000);
+        let dir = session_dir("rewind", &rewind);
+        assert_eq!(build(&dir, 0, 7, 0).rebuilds.cost(), 0.0);
+        let _ = std::fs::remove_dir_all(&dir);
+        // The same shrink after the cache expired is still a rebuild.
+        let expired = base()
+            + &user_at("2026-10-01T13:00:00.000Z")
+            + &reply_at("c4", "2026-10-01T13:00:20.000Z", o, 4_000, 80_000);
+        let dir = session_dir("rewind-expired", &expired);
+        assert_eq!(build(&dir, 0, 7, 0).rebuilds.get(Cause::Idle).replies, 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tiny_shares_are_not_shown_as_zero() {
+        assert_eq!(pct(1.0, 100_000.0), "<0.1%");
+        assert_eq!(pct(0.0, 100_000.0), "0%");
+        assert_eq!(pct(5.0, 100.0), "5.0%");
     }
 
     #[test]
