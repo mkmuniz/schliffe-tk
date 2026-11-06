@@ -67,7 +67,14 @@ A consolidation of everything marked "left for later" across M0-M8 (previously s
 - **Log detection is rule-based.** What each kind keeps and drops is listed in `docs/pasted-logs.md`. Anything not recognized with confidence is left untouched (apart from ANSI codes and consecutive duplicate lines); blocks under 20 lines / 1.5 KB, or that wouldn't shrink to 60% or less, are never touched.
 - **Library vs. app frames are guessed by prefix** (`node_modules`, `java.`, `org.springframework.`, `System.`, `Microsoft.`…). A project whose own namespace starts like a framework would see its frames counted as library frames — still recoverable via `schliffe show`.
 - **Context size comes from the session transcript** (the latest reply's usage); the notice appears on the prompt after the threshold was crossed.
+- **The expired-cache notice can't stop the rewrite by default.** In `warn` mode it is shown while the message is already being sent — it teaches, it doesn't prevent. Only `SCHLIFFE_COLD_CACHE=block` leaves room to `/clear` or `/compact` first.
+- **Expiry is judged from the transcript only.** Requests that touch the same cache without being logged there (another client on the same account) would keep it warm unseen — the notice could then claim an expiry that didn't happen. The gap is measured from when the last reply was logged and the TTL is the longest one in use, so a notice never fires early from Schliffe's own arithmetic.
 - **Not native Windows** (same as the other hook).
+
+## `schliffe report`
+
+- **Rebuild causes are attributed, not observed.** The transcript shows that the cache broke and how much was written again; the cause is inferred from what happened in between, in this order: a `compact_boundary`, a model change, a gap longer than the cache lifetime, else "other" (tool list, effort or prompt changes leave no direct trace).
+- **Prices are a table in the code** (`cache_read_weight`, TTL write weights): a model whose cache price differs from it is mis-weighted until the table is updated. Costs are in each model's input-token units, so mixing models with different base prices is approximate.
 
 ## Security
 

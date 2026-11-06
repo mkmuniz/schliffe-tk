@@ -4,6 +4,13 @@ All notable changes to this project are recorded here. Format loosely inspired b
 
 ## [Unreleased]
 
+### Added
+- **Expired-cache notice** (`UserPromptSubmit` hook): when a conversation sat idle past its cache lifetime, the next message writes all of it again at the write price — the single biggest cost found in real transcripts (19%). Above 100k tokens of context the user gets a notice with the idle time, the tokens rewritten and how much more that costs than a warm re-read. `SCHLIFFE_COLD_CACHE=block` holds the message once so `/clear` or `/compact` can come first; `=off` disables it; `SCHLIFFE_COLD_CACHE_MIN_TOKENS` sets the threshold. Expiry is only claimed when certain (longest TTL in use, gap measured from the last reply); slash commands and subagent turns are ignored.
+- **`schliffe report`: cache rebuilds**. Replies that write the cached conversation again instead of re-reading it are split out of "new content" and attributed to idling past the TTL, compaction, a model switch, or other — with their cost and, when idle rebuilds pass 5% of it, a lever.
+
+### Fixed
+- **`schliffe report` mispriced the cache.** Every write was weighted 1.25× and every read 0.1×; Claude Code writes 1-hour entries (2×), and Opus 5.5 / Fable 5.1 re-read at 0.05× / 0.025×. Each reply is now priced from `usage.cache_creation` and its model (on real transcripts: re-reads 70% → 57% of the cost, writes 20% → 33%).
+
 ## [0.5.0] — 2026-10-12
 
 ### Added
