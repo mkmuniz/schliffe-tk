@@ -111,11 +111,145 @@ struct Session {
     peak_context: u64,
 }
 
+/// Why a cached conversation had to be written again.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Cause {
+    Idle,
+    Compaction,
+    ModelSwitch,
+    Other,
+}
+
+const CAUSES: [(Cause, &str); 4] = [
+    (Cause::Idle, "idle longer than the cache lifetime (TTL)"),
+    (Cause::Compaction, "compaction (/compact or automatic)"),
+    (Cause::ModelSwitch, "model switch"),
+    (Cause::Other, "other (no idle gap, compaction or switch)"),
+];
+
+#[derive(Default, Clone, Copy)]
+struct Rebuild {
+    replies: u64,
+    tokens: u64,
+    cost: f64,
+}
+
+/// Cache rebuilds by cause, in `CAUSES` order.
+#[derive(Default)]
+struct Rebuilds {
+    by: [Rebuild; 4],
+}
+
+impl Rebuilds {
+    fn add(&mut self, cause: Cause, tokens: u64, cost: f64) {
+        let r = &mut self.by[CAUSES.iter().position(|(c, _)| *c == cause).unwrap_or(3)];
+        r.replies += 1;
+        r.tokens += tokens;
+        r.cost += cost;
+    }
+    fn get(&self, cause: Cause) -> Rebuild {
+        self.by[CAUSES.iter().position(|(c, _)| *c == cause).unwrap_or(3)]
+    }
+    fn cost(&self) -> f64 {
+        self.by.iter().map(|r| r.cost).sum()
+    }
+}
+
+/// Less cache than this lost between two replies is breakpoints shifting,
+/// not a rebuild.
+const REBUILD_MIN_TOKENS: u64 = 4_096;
+/// The API's default cache lifetime, for transcripts that don't say.
+const DEFAULT_TTL_SECS: u64 = 300;
+
+/// The main conversation's cache, reply by reply. A healthy reply re-reads
+/// everything the previous one had cached; when most of it is written
+/// again instead, the cache broke — and the transcript shows why.
+#[derive(Default)]
+struct Chain {
+    prev: Option<Cached>,
+    /// When the request being answered started: the latest input (prompt
+    /// or tool result) logged since the previous reply.
+    pending_start: Option<u64>,
+    compacted: bool,
+    /// Lifetime of the entries the previous replies wrote.
+    ttl: Option<u64>,
+}
+
+struct Cached {
+    start: Option<u64>,
+    tokens: u64,
+    model: String,
+}
+
+impl Chain {
+    /// Feeds one reply; returns the rebuild it reveals, if any.
+    fn observe(
+        &mut self,
+        reply_ts: Option<u64>,
+        usage: &Usage,
+        write_ttl: Option<u64>,
+        model: &str,
+    ) -> Option<(Cause, u64)> {
+        if usage.context() == 0 || model == "<synthetic>" {
+            return None;
+        }
+        let start = self.pending_start.take().or(reply_ts);
+        let found = self.prev.as_ref().and_then(|p| {
+            let rebuilt = p
+                .tokens
+                .saturating_sub(usage.cache_read)
+                .min(usage.cache_write);
+            (rebuilt >= REBUILD_MIN_TOKENS).then(|| {
+                let gap = match (start, p.start) {
+                    (Some(now), Some(before)) => now.saturating_sub(before),
+                    _ => 0,
+                };
+                let cause = if self.compacted {
+                    Cause::Compaction
+                } else if p.model != model {
+                    Cause::ModelSwitch
+                } else if gap > self.ttl.unwrap_or(DEFAULT_TTL_SECS) {
+                    Cause::Idle
+                } else {
+                    Cause::Other
+                };
+                (cause, rebuilt)
+            })
+        });
+        if write_ttl.is_some() {
+            self.ttl = write_ttl;
+        }
+        self.prev = Some(Cached {
+            start,
+            tokens: usage.cache_read + usage.cache_write,
+            model: model.to_string(),
+        });
+        self.compacted = false;
+        found
+    }
+}
+
+/// Shortest lifetime among one reply's cache writes (a 5-minute part
+/// expires first), or `None` when it wrote nothing.
+fn write_ttl(u: &Value) -> Option<u64> {
+    let n = |p: &str| u.pointer(p).and_then(Value::as_u64).unwrap_or(0);
+    match (
+        n("/cache_creation/ephemeral_5m_input_tokens"),
+        n("/cache_creation/ephemeral_1h_input_tokens"),
+        n("/cache_creation_input_tokens"),
+    ) {
+        (0, 0, 0) => None,
+        (0, 0, _) | (1.., _, _) => Some(DEFAULT_TTL_SECS),
+        (0, 1.., _) => Some(3_600),
+    }
+}
+
 pub struct Report {
     days: u64,
     total: Usage,
     sessions: Vec<Session>,
     sources: Sources,
+    rebuilds: Rebuilds,
     schliffe_saved_tokens: u64,
 }
 
@@ -152,12 +286,14 @@ fn build(dir: &Path, since: u64, days: u64, schliffe_saved_tokens: u64) -> Repor
     let mut total = Usage::default();
     let mut sessions = Vec::new();
     let mut sources = Sources::default();
+    let mut rebuilds = Rebuilds::default();
     let Ok(projects) = std::fs::read_dir(dir) else {
         return Report {
             days,
             total,
             sessions,
             sources,
+            rebuilds,
             schliffe_saved_tokens,
         };
     };
@@ -181,7 +317,7 @@ fn build(dir: &Path, since: u64, days: u64, schliffe_saved_tokens: u64) -> Repor
             if modified < since {
                 continue;
             }
-            if let Some(s) = read_session(&path, since, &mut sources) {
+            if let Some(s) = read_session(&path, since, &mut sources, &mut rebuilds) {
                 total.add(&s.usage);
                 let project = if s.project.is_empty() {
                     project_name(&project.file_name().to_string_lossy())
@@ -198,6 +334,7 @@ fn build(dir: &Path, since: u64, days: u64, schliffe_saved_tokens: u64) -> Repor
         total,
         sessions,
         sources,
+        rebuilds,
         schliffe_saved_tokens,
     }
 }
@@ -213,11 +350,17 @@ fn project_name(dir: &str) -> String {
     }
 }
 
-fn read_session(path: &Path, since: u64, sources: &mut Sources) -> Option<Session> {
+fn read_session(
+    path: &Path,
+    since: u64,
+    sources: &mut Sources,
+    rebuilds: &mut Rebuilds,
+) -> Option<Session> {
     let file = std::fs::File::open(path).ok()?;
     let mut seen: HashSet<String> = HashSet::new();
     let mut tool_names: HashMap<String, String> = HashMap::new();
     let mut cwds: HashMap<String, u64> = HashMap::new();
+    let mut chain = Chain::default();
     let mut s = Session {
         project: String::new(),
         responses: 0,
@@ -229,11 +372,23 @@ fn read_session(path: &Path, since: u64, sources: &mut Sources) -> Option<Sessio
         let Ok(e) = serde_json::from_str::<Value>(&line) else {
             continue; // fail-open on unknown lines
         };
-        let in_period = e
+        let ts = e
             .get("timestamp")
             .and_then(Value::as_str)
-            .and_then(parse_iso)
-            .is_none_or(|t| t >= since);
+            .and_then(parse_iso);
+        let in_period = ts.is_none_or(|t| t >= since);
+        // Subagent turns have their own cache; only the main chain's is followed.
+        let main = e.get("isSidechain").and_then(Value::as_bool) != Some(true);
+        let kind = e.get("type").and_then(Value::as_str);
+        if main && kind == Some("user") {
+            chain.pending_start = ts.or(chain.pending_start);
+        }
+        if main
+            && kind == Some("system")
+            && e.get("subtype").and_then(Value::as_str) == Some("compact_boundary")
+        {
+            chain.compacted = true;
+        }
         if let Some(c) = e.get("cwd").and_then(Value::as_str) {
             *cwds.entry(c.to_string()).or_default() += 1;
         }
@@ -255,12 +410,11 @@ fn read_session(path: &Path, since: u64, sources: &mut Sources) -> Option<Sessio
                 }
             }
         }
-        if !in_period {
-            continue;
-        }
 
         // One model reply spans several lines (thinking, text, tool_use),
         // each repeating the same usage: count it once per message id.
+        // Replies before the period still feed the chain, so the first one
+        // inside it is compared with its real predecessor.
         if let Some(u) = msg.get("usage") {
             let id = msg
                 .get("id")
@@ -275,14 +429,29 @@ fn read_session(path: &Path, since: u64, sources: &mut Sources) -> Option<Sessio
             if seen.insert(id) {
                 let model = msg.get("model").and_then(Value::as_str).unwrap_or("");
                 let usage = Usage::from_json(u, model);
-                s.responses += 1;
-                s.peak_context = s.peak_context.max(usage.context());
-                s.usage.add(&usage);
-                sources.add("model replies", usage.output.saturating_sub(usage.thinking));
+                let rebuilt = if main {
+                    chain.observe(ts, &usage, write_ttl(u), model)
+                } else {
+                    None
+                };
+                if in_period {
+                    s.responses += 1;
+                    s.peak_context = s.peak_context.max(usage.context());
+                    s.usage.add(&usage);
+                    sources.add("model replies", usage.output.saturating_sub(usage.thinking));
+                    if let Some((cause, tokens)) = rebuilt {
+                        // Priced at this reply's own write rate (rebuilt ≤ cache_write).
+                        let rate = usage.write_cost / usage.cache_write as f64;
+                        rebuilds.add(cause, tokens, tokens as f64 * rate);
+                    }
+                }
             }
         }
 
-        if e.get("type").and_then(Value::as_str) == Some("user") {
+        if !in_period {
+            continue;
+        }
+        if kind == Some("user") {
             attribute_user_content(msg, &tool_names, sources);
         }
     }
@@ -479,12 +648,14 @@ fn render(r: &Report) -> String {
     );
 
     out.push_str("where the cost is\n");
+    let rebuilt = r.rebuilds.cost();
     let parts = [
         ("re-reading the conversation (cache)", r.total.read_cost),
         (
             "new content entering it",
-            r.total.write_cost + r.total.input as f64,
+            (r.total.write_cost - rebuilt).max(0.0) + r.total.input as f64,
         ),
+        ("writing it again after the cache broke", rebuilt),
         (
             "the model's replies",
             r.total.output.saturating_sub(r.total.thinking) as f64 * W_OUTPUT,
@@ -499,6 +670,26 @@ fn render(r: &Report) -> String {
         ));
     }
     out.push_str(&format!("  {:<38} {:>8}\n\n", "total", human(cost)));
+
+    if rebuilt > 0.0 {
+        out.push_str(
+            "cache rebuilds (the cached conversation written again at the write price, instead of re-read)\n",
+        );
+        for (cause, label) in CAUSES {
+            let b = r.rebuilds.get(cause);
+            if b.replies == 0 {
+                continue;
+            }
+            out.push_str(&format!(
+                "  {label:<42} {:>4} replies {:>7} tokens {:>8}  {:>4}\n",
+                b.replies,
+                human(b.tokens as f64),
+                human(b.cost),
+                pct(b.cost, cost)
+            ));
+        }
+        out.push('\n');
+    }
 
     out.push_str("sessions that cost the most\n");
     for s in r.sessions.iter().take(5) {
@@ -569,6 +760,16 @@ fn truncate(s: &str, max: usize) -> String {
 /// At most three, each tied to a number in the report.
 fn tips(r: &Report, cost: f64) -> Vec<String> {
     let mut out = Vec::new();
+    let idle = r.rebuilds.get(Cause::Idle);
+    if idle.cost > cost * 0.05 {
+        out.push(format!(
+            "{} repl{} came after the cache expired and wrote ~{} tokens again — {} of the cost: /compact or /clear before a long break, or start a new conversation when you come back",
+            idle.replies,
+            if idle.replies == 1 { "y" } else { "ies" },
+            human(idle.tokens as f64),
+            pct(idle.cost, cost)
+        ));
+    }
     let reread = r.total.read_cost;
     let long: Vec<&Session> = r
         .sessions
@@ -680,6 +881,121 @@ mod tests {
 
     fn close(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-6
+    }
+
+    fn user_at(ts: &str) -> String {
+        line(
+            serde_json::json!({"type":"user","timestamp":ts,"message":{"role":"user","content":"go"}}),
+        )
+    }
+
+    /// One reply whose cache writes are all 1-hour entries.
+    fn reply_at(id: &str, ts: &str, model: &str, read: u64, write: u64) -> String {
+        line(
+            serde_json::json!({"type":"assistant","timestamp":ts,"message":{
+            "id":id,"model":model,"content":[{"type":"text","text":"ok"}],
+            "usage":{"input_tokens":1,"cache_read_input_tokens":read,"cache_creation_input_tokens":write,"output_tokens":10,
+                     "cache_creation":{"ephemeral_1h_input_tokens":write,"ephemeral_5m_input_tokens":0}}}}),
+        )
+    }
+
+    /// Warm start, a 2-hour break, a model switch, a compaction, a warm
+    /// reply, an unexplained break, and noise below the threshold — with a
+    /// subagent reply in between that must not disturb the main chain.
+    fn rebuild_fixture(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("schliffe-report-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let p = dir.join("-Users-jane-acme");
+        std::fs::create_dir_all(&p).unwrap();
+        let o = "claude-opus-5-5";
+        let s = "claude-sonnet-5";
+        let mut t = String::new();
+        t += &user_at("2026-10-01T09:59:50.000Z");
+        t += &reply_at("r1", "2026-10-01T10:00:00.000Z", o, 0, 50_000);
+        t += &user_at("2026-10-01T10:04:50.000Z");
+        t += &reply_at("r2", "2026-10-01T10:05:00.000Z", o, 50_000, 2_000);
+        t += &line(
+            serde_json::json!({"type":"assistant","isSidechain":true,"timestamp":"2026-10-01T10:06:00.000Z","message":{"id":"sub","model":o,"usage":{"input_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":90_000,"output_tokens":5}}}),
+        );
+        t += &user_at("2026-10-01T12:10:00.000Z");
+        t += &reply_at("r3", "2026-10-01T12:10:30.000Z", o, 4_000, 50_000);
+        t += &user_at("2026-10-01T12:11:00.000Z");
+        t += &reply_at("r4", "2026-10-01T12:11:20.000Z", s, 4_000, 52_000);
+        t += &line(
+            serde_json::json!({"type":"system","subtype":"compact_boundary","timestamp":"2026-10-01T12:11:50.000Z"}),
+        );
+        t += &user_at("2026-10-01T12:12:00.000Z");
+        t += &reply_at("r5", "2026-10-01T12:12:20.000Z", s, 4_000, 10_000);
+        t += &user_at("2026-10-01T12:13:00.000Z");
+        t += &reply_at("r6", "2026-10-01T12:13:20.000Z", s, 14_000, 1_000);
+        t += &user_at("2026-10-01T12:14:00.000Z");
+        t += &reply_at("r7", "2026-10-01T12:14:20.000Z", s, 2_000, 13_000);
+        t += &user_at("2026-10-01T12:15:00.000Z");
+        t += &reply_at("r8", "2026-10-01T12:15:20.000Z", s, 14_000, 3_000);
+        std::fs::write(p.join("s.jsonl"), t).unwrap();
+        dir
+    }
+
+    #[test]
+    fn chain_finds_rebuilds_and_their_cause() {
+        let dir = rebuild_fixture("causes");
+        let r = build(&dir, 0, 7, 0);
+        let idle = r.rebuilds.get(Cause::Idle);
+        assert_eq!((idle.replies, idle.tokens), (1, 48_000)); // 52k cached, 4k re-read
+        assert!(close(idle.cost, 96_000.0)); // rewritten as 1-hour entries, 2×
+        assert_eq!(r.rebuilds.get(Cause::ModelSwitch).tokens, 50_000);
+        assert_eq!(r.rebuilds.get(Cause::Compaction).tokens, 10_000); // only what was written
+        assert_eq!(r.rebuilds.get(Cause::Other).tokens, 13_000);
+        // r8 lost 1k (noise) and r2/r6 re-read everything: no other rebuild.
+        assert_eq!(r.rebuilds.by.iter().map(|b| b.replies).sum::<u64>(), 4);
+        let text = render(&r);
+        assert!(
+            text.contains("writing it again after the cache broke"),
+            "{text}"
+        );
+        assert!(
+            text.contains("idle longer than the cache lifetime"),
+            "{text}"
+        );
+        assert!(text.contains("came after the cache expired"), "{text}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn replies_before_the_period_still_anchor_the_chain() {
+        let dir = rebuild_fixture("period-chain");
+        let since = parse_iso("2026-10-01T12:11:10Z").unwrap(); // after r3, before r4
+        let r = build(&dir, since, 1, 0);
+        assert_eq!(r.rebuilds.get(Cause::Idle).replies, 0); // r3 is outside
+        assert_eq!(r.rebuilds.get(Cause::ModelSwitch).tokens, 50_000); // r4 vs r3
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_ttl_is_the_shortest_lifetime_written() {
+        let ttl = |v: Value| write_ttl(&v);
+        assert_eq!(
+            ttl(serde_json::json!({"cache_creation_input_tokens": 0})),
+            None
+        );
+        assert_eq!(
+            ttl(
+                serde_json::json!({"cache_creation_input_tokens": 9, "cache_creation": {"ephemeral_1h_input_tokens": 9, "ephemeral_5m_input_tokens": 0}})
+            ),
+            Some(3_600)
+        );
+        assert_eq!(
+            ttl(
+                serde_json::json!({"cache_creation_input_tokens": 9, "cache_creation": {"ephemeral_1h_input_tokens": 5, "ephemeral_5m_input_tokens": 4}})
+            ),
+            Some(300)
+        );
+        // No breakdown (older transcripts): the API default.
+        assert_eq!(
+            ttl(serde_json::json!({"cache_creation_input_tokens": 9})),
+            Some(300)
+        );
     }
 
     #[test]
