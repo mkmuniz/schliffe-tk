@@ -187,7 +187,10 @@ fn replace_path(s: &str, prefix: &str, whole: &str, dir: &str) -> String {
 fn strip_ansi(s: &str) -> String {
     // Regex compiled once per call (v1) — commands only pass through here
     // once per invocation, negligible cost next to the child process.
-    let re = Regex::new("\x1b\\[[0-9;]*[a-zA-Z]").expect("static ANSI regex is valid");
+    // CSI with any parameter/intermediate bytes (`ESC[?25l`, `ESC[38;5;1m`),
+    // OSC up to BEL or ST (terminal hyperlinks, titles), and two-byte escapes.
+    let re = Regex::new(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[@-Z\\-_]")
+        .expect("static ANSI regex is valid");
     re.replace_all(s, "").into_owned()
 }
 
@@ -201,6 +204,14 @@ mod tests {
         let input = "\x1b[32mok\x1b[0m failed: \x1b[31mno\x1b[0m";
         let out = apply(&[Step::StripAnsi], input, 0);
         assert_eq!(out, "ok failed: no");
+    }
+
+    #[test]
+    fn strip_ansi_removes_cursor_codes_and_hyperlinks() {
+        let input = "\x1b[?25lbuild\x1b[?25h \x1b[38;5;196mERR\x1b[0m \x1b]8;;https://x.io\x07docs\x1b]8;;\x07 \x1b]0;title\x1b\\done";
+        assert_eq!(apply(&[Step::StripAnsi], input, 0), "build ERR docs done");
+        // Plain text with brackets is left alone.
+        assert_eq!(apply(&[Step::StripAnsi], "a[0m] [?25l]", 0), "a[0m] [?25l]");
     }
 
     #[test]
