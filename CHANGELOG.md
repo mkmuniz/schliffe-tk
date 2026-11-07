@@ -9,6 +9,9 @@ All notable changes to this project are recorded here. Format loosely inspired b
 - **`schliffe report`: cache rebuilds**. Replies that write the cached conversation again instead of re-reading it are split out of "new content" and attributed to idling past the TTL, compaction, a model switch, or other — with their cost and, when idle rebuilds pass 5% of it, a lever.
 
 ### Fixed
+- **Filters no longer invent text (rule 5).** `compact_path` replaced the cwd/HOME as plain substrings (`/repo/app-web` became `.-web`, a path that doesn't exist); output that isn't valid UTF-8 got `U+FFFD` the tool never printed and now passes through byte for byte; `strip_ansi` now removes full CSI/OSC sequences (cursor codes, terminal hyperlinks).
+- **`git status` with a content flag ran as porcelain.** `-v`, `--ignored`, `-uno`/`-uall`, `-z` and `--porcelain=v2` lost what they asked for; only format flags (`-s`, `-b`, `--short`, `--branch`, `--porcelain`) are filtered now.
+- **Long builds and lint runs lost their verdict.** `max_lines` kept only the head; a new `tail` keeps the end too, on for eslint/JS builds, `go test`, `terraform plan`, `dotnet build`, `docker build` and installs.
 - **`schliffe report` mispriced the cache.** Every write was weighted 1.25× and every read 0.1×; Claude Code on a subscription writes 1-hour entries (2×), and Opus 5.5 / Fable 5.1 re-read at 0.05× / 0.025×. Each reply is now priced from `usage.cache_creation` and its model (on real transcripts: re-reads 70% → 57% of the cost, writes 20% → 33%).
 
 ## [0.5.0] — 2026-10-12
