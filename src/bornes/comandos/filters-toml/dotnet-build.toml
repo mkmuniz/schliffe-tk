@@ -23,3 +23,4 @@ patterns = [
 [[pipeline]]
 action = "max_lines"
 limit = 80
+tail = 20 # "Build succeeded/FAILED", warning and error counts come last

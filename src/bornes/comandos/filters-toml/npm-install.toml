@@ -27,6 +27,7 @@ patterns = [
 [[pipeline]]
 action = "max_lines"
 limit = 20
+tail = 5 # "added N packages" / audit summary / the error come last
 
 [[pipeline]]
 action = "on_empty"

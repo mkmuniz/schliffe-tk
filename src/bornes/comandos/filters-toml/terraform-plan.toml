@@ -15,6 +15,7 @@ patterns = ["^[a-zA-Z0-9_.\\[\\]\"-]+: Refreshing state\\.\\.\\.", "^\\s*#.*\\(n
 [[pipeline]]
 action = "max_lines"
 limit = 80
+tail = 20 # "Plan: N to add, N to change, N to destroy" is the last line
 
 [[pipeline]]
 action = "on_empty"

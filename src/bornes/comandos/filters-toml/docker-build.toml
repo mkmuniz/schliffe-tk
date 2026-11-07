@@ -21,3 +21,4 @@ patterns = [
 [[pipeline]]
 action = "max_lines"
 limit = 60
+tail = 15 # a failing step and its error are printed last

@@ -29,3 +29,4 @@ action = "squeeze_spaces"
 [[pipeline]]
 action = "max_lines"
 limit = 120
+tail = 20 # the summary ("✖ N problems") and the last file's errors
