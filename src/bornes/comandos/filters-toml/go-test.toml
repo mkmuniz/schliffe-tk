@@ -12,3 +12,4 @@ patterns = ["^=== (RUN|PAUSE|CONT|NAME) ", "^\\s*--- PASS: "]
 [[pipeline]]
 action = "max_lines"
 limit = 80
+tail = 20 # FAIL/ok per package is printed last

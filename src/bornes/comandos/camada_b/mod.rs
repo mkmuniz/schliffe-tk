@@ -86,6 +86,10 @@ pub enum Step {
     },
     MaxLines {
         limit: usize,
+        /// How many of the `limit` lines come from the END — where builds,
+        /// linters and plans print their verdict. 0 keeps only the head.
+        #[serde(default)]
+        tail: usize,
     },
     /// Same caveat as `MatchOutput`: only fires on confirmed success.
     OnEmpty {

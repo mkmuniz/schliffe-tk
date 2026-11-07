@@ -49,3 +49,4 @@ label = "build asset sizes"
 [[pipeline]]
 action = "max_lines"
 limit = 80
+tail = 20 # the build result and the last errors

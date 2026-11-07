@@ -21,3 +21,4 @@ patterns = [
 [[pipeline]]
 action = "max_lines"
 limit = 30
+tail = 8 # "Done in …" / the error come last

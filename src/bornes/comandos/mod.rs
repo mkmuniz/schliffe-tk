@@ -154,6 +154,23 @@ pub fn run(invoked_name: &str, rest_args: &[String]) -> ExitCode {
         }
     };
 
+    // Output that isn't valid UTF-8 (a Latin-1 file in a diff, a binary
+    // blob) can't be filtered without inventing U+FFFD the tool never wrote
+    // (rule 5): hand both captured streams over byte for byte.
+    if std::str::from_utf8(&captured.stdout).is_err()
+        || captured
+            .stderr
+            .as_deref()
+            .is_some_and(|e| std::str::from_utf8(e).is_err())
+    {
+        use std::io::Write;
+        if let Some(err) = &captured.stderr {
+            let _ = std::io::stderr().write_all(err);
+        }
+        let _ = std::io::stdout().write_all(&captured.stdout);
+        stats::record_passthrough(&stats::command_key(invoked_name, rest_args));
+        return ExitCode::from(captured.exit_code as u8);
+    }
     let raw = String::from_utf8_lossy(&captured.stdout);
 
     // Business rule 2 (specs.md §4): no success shortcut if the process did
@@ -271,15 +288,23 @@ fn finalize(filtered: Option<String>, raw: &str) -> String {
     }
 }
 
-/// `git status` with zero or more flags (but no path arguments) can be
-/// replaced by `--porcelain=v1 --branch` for a smaller, machine-readable
-/// output.  Path arguments or the `--` separator mean the caller wants a
-/// scoped query — replacing the args would widen it, so we leave it alone.
+/// `git status` can be replaced by `--porcelain=v1 --branch` only when its
+/// flags just pick a format that output already covers (`-s`, `-b`,
+/// `--porcelain`…). Flags that change WHAT is shown (`-v` adds the diff,
+/// `--ignored`, `-uno`/`-uall`, `-z`, `--porcelain=v2`) or path arguments
+/// would be silently dropped — those run as typed, unfiltered.
 fn is_git_status_filterable(rest_args: &[String]) -> bool {
+    let format_only = |a: &str| match a {
+        "--short" | "--branch" | "--porcelain" | "--porcelain=v1" | "--long" => true,
+        _ => {
+            a.len() > 1
+                && a.starts_with('-')
+                && !a.starts_with("--")
+                && a[1..].chars().all(|c| matches!(c, 's' | 'b'))
+        }
+    };
     rest_args.first().map(String::as_str) == Some("status")
-        && rest_args[1..]
-            .iter()
-            .all(|a| a.starts_with('-') && a != "--")
+        && rest_args[1..].iter().all(|a| format_only(a))
 }
 
 fn looks_like_git_sha(s: &str) -> bool {
@@ -304,12 +329,28 @@ mod tests {
         assert!(is_git_status_filterable(&s(&["status", "-s"])));
         assert!(is_git_status_filterable(&s(&["status", "--short"])));
         assert!(is_git_status_filterable(&s(&["status", "--porcelain"])));
+        assert!(is_git_status_filterable(&s(&["status", "-sb"])));
         assert!(is_git_status_filterable(&s(&[
-            "status",
-            "--porcelain=v2",
-            "--branch"
+            "status", "--short", "--branch"
         ])));
-        assert!(is_git_status_filterable(&s(&["status", "-uno"])));
+    }
+
+    #[test]
+    fn git_status_flags_that_change_the_content_run_as_typed() {
+        for flag in [
+            "-v",
+            "--ignored",
+            "-uno",
+            "-uall",
+            "-z",
+            "--porcelain=v2",
+            "-sv",
+        ] {
+            assert!(
+                !is_git_status_filterable(&s(&["status", flag])),
+                "{flag} would be dropped"
+            );
+        }
     }
 
     #[test]
