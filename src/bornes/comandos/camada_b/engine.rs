@@ -139,15 +139,48 @@ fn compact_path(s: &str) -> String {
     if let Ok(cwd) = std::env::current_dir() {
         let cwd = cwd.to_string_lossy();
         if cwd.len() > 1 {
-            out = out.replace(&format!("{cwd}/"), "");
-            out = out.replace(cwd.as_ref(), ".");
+            out = replace_path(&out, cwd.trim_end_matches('/'), ".", "");
         }
     }
     if let Ok(home) = std::env::var("HOME")
         && home.len() > 1
     {
-        out = out.replace(&home, "~");
+        out = replace_path(&out, home.trim_end_matches('/'), "~", "~/");
     }
+    out
+}
+
+/// Replaces `prefix` only where it is a whole path — never glued to a longer
+/// name on either side, so `/repo/app` doesn't turn `/repo/app-web` into
+/// `.-web` (a path that doesn't exist). `prefix/…` becomes `dir…`; the
+/// bare `prefix` becomes `whole`.
+fn replace_path(s: &str, prefix: &str, whole: &str, dir: &str) -> String {
+    let is_name = |c: char| c.is_alphanumeric() || matches!(c, '.' | '-' | '_' | '/' | '~');
+    let mut out = String::with_capacity(s.len());
+    let mut last = 0;
+    for (i, _) in s.match_indices(prefix) {
+        if i < last {
+            continue;
+        }
+        let end = i + prefix.len();
+        if s[..i].chars().next_back().is_some_and(is_name) {
+            continue;
+        }
+        match s[end..].chars().next() {
+            Some('/') => {
+                out.push_str(&s[last..i]);
+                out.push_str(dir);
+                last = end + 1;
+            }
+            Some(c) if is_name(c) => continue,
+            _ => {
+                out.push_str(&s[last..i]);
+                out.push_str(whole);
+                last = end;
+            }
+        }
+    }
+    out.push_str(&s[last..]);
     out
 }
 
@@ -271,5 +304,21 @@ mod tests {
             apply(&[Step::CompactPath], &input, 0),
             "app/util1.ts\n> x build ."
         );
+    }
+
+    #[test]
+    fn paths_are_replaced_only_when_whole() {
+        let r = |s: &str| replace_path(s, "/repo/app", ".", "");
+        assert_eq!(r("/repo/app/src/a.ts:1"), "src/a.ts:1");
+        assert_eq!(r("in /repo/app: ok"), "in .: ok");
+        assert_eq!(r("'/repo/app'"), "'.'");
+        // A sibling with the same prefix, or the prefix inside a longer path,
+        // is a different path: left untouched.
+        assert_eq!(r("/repo/app-web/x.ts"), "/repo/app-web/x.ts");
+        assert_eq!(r("/repo/apps/x.ts"), "/repo/apps/x.ts");
+        assert_eq!(r("/opt/repo/app/x.ts"), "/opt/repo/app/x.ts");
+        let h = |s: &str| replace_path(s, "/Users/m", "~", "~/");
+        assert_eq!(h("/Users/m/.npm/_logs"), "~/.npm/_logs");
+        assert_eq!(h("/Users/mike/x"), "/Users/mike/x");
     }
 }
