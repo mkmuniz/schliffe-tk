@@ -1,6 +1,7 @@
 {
   "name": "schliffe-tk",
   "owner": { "name": "Mikael Muniz Ribeiro" },
+  "description": "Schliffe — cuts token waste in Claude Code sessions (command output, MCP results, images, pasted logs).",
   "plugins": [
     {
       "name": "schliffe",
