@@ -10,10 +10,18 @@ const { spawnSync } = require("child_process");
 const exe = process.platform === "win32" ? "schliffe.exe" : "schliffe";
 const bin = path.join(__dirname, "..", "vendor", exe);
 
+// Installed with scripts disabled (`--ignore-scripts`, pnpm 10's default):
+// the postinstall never fetched the binary, so fetch it now — same download
+// and checksum check. Its messages go to stderr to keep stdout clean.
+if (!fs.existsSync(bin)) {
+  spawnSync(process.execPath, [path.join(__dirname, "..", "install.js")], {
+    stdio: ["ignore", 2, 2],
+  });
+}
 if (!fs.existsSync(bin)) {
   console.error(
-    "schliffe: native binary missing (postinstall did not complete).\n" +
-      "Reinstall, or see https://github.com/mkmuniz/schliffe-tk#install",
+    "schliffe: native binary missing and the download above failed.\n" +
+      "See https://github.com/mkmuniz/schliffe-tk#install",
   );
   process.exit(1);
 }
