@@ -53,14 +53,14 @@ pub fn run(dry_run: bool, no_hook: bool) -> ExitCode {
         eprintln!("schliffe: no HOME — cannot locate where to install");
         return ExitCode::FAILURE;
     };
-    let real_bin = match real_binary() {
+    let shims_dir = shims_dir(&home);
+    let real_bin = match real_binary(&shims_dir) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("schliffe: cannot resolve this binary's path: {e}");
             return ExitCode::FAILURE;
         }
     };
-    let shims_dir = shims_dir(&home);
 
     if dry_run {
         println!("schliffe setup --dry-run (no changes will be made):");
@@ -221,11 +221,30 @@ fn shims_dir(home: &Path) -> PathBuf {
     home.join(".schliffe").join("shims")
 }
 
-/// The real binary to point shims at: this executable, with symlinks resolved
-/// so a shim never ends up pointing at another shim (which would loop).
-fn real_binary() -> std::io::Result<PathBuf> {
+/// The binary to point shims at: this executable with symlinks resolved, so
+/// a shim never points at another shim (a loop) — but reached through a
+/// stable link on PATH when there is one. Homebrew's resolved path is the
+/// versioned `Cellar/schliffe/<v>/bin/schliffe`, which `brew upgrade`
+/// deletes, silently leaving every shim dangling; `/opt/homebrew/bin/
+/// schliffe` survives upgrades.
+fn real_binary(shims_dir: &Path) -> std::io::Result<PathBuf> {
     let exe = std::env::current_exe()?;
-    Ok(std::fs::canonicalize(&exe).unwrap_or(exe))
+    let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
+    let dirs: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default();
+    Ok(stable_link(&exe, &dirs, shims_dir).unwrap_or(exe))
+}
+
+/// The first `schliffe` on PATH (outside the shims folder) that resolves to
+/// `exe` without being `exe` itself.
+fn stable_link(exe: &Path, dirs: &[PathBuf], shims_dir: &Path) -> Option<PathBuf> {
+    let shims = std::fs::canonicalize(shims_dir).unwrap_or_else(|_| shims_dir.to_path_buf());
+    dirs.iter()
+        .filter(|d| d.is_absolute())
+        .filter(|d| std::fs::canonicalize(d).unwrap_or_else(|_| d.to_path_buf()) != shims)
+        .map(|d| d.join("schliffe"))
+        .find(|c| c.as_path() != exe && std::fs::canonicalize(c).is_ok_and(|r| r == exe))
 }
 
 fn path_line(shims_dir: &Path) -> String {
@@ -516,5 +535,32 @@ mod tests {
         let t = profile_targets(Path::new("/home/u"), ShellKind::Bash);
         assert_eq!(t[0].0, PathBuf::from("/home/u/.profile"));
         assert_eq!(t[1].1, Placement::Prepend);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shims_target_a_link_that_survives_upgrades() {
+        // Homebrew layout: bin/schliffe -> Cellar/schliffe/0.5.0/bin/schliffe.
+        let root = std::env::temp_dir().join(format!("schliffe-stable-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let cellar = root.join("Cellar/schliffe/0.5.0/bin");
+        let bin = root.join("bin");
+        let shims = root.join("shims");
+        for d in [&cellar, &bin, &shims] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let real = cellar.join("schliffe");
+        std::fs::write(&real, "").unwrap();
+        std::os::unix::fs::symlink(&real, bin.join("schliffe")).unwrap();
+        std::os::unix::fs::symlink(&real, shims.join("schliffe")).unwrap();
+        let exe = std::fs::canonicalize(&real).unwrap();
+        let dirs = vec![shims.clone(), bin.clone()];
+        assert_eq!(stable_link(&exe, &dirs, &shims), Some(bin.join("schliffe")));
+        // Only the shim itself on PATH: never point a shim at a shim.
+        assert_eq!(
+            stable_link(&exe, std::slice::from_ref(&shims), &shims),
+            None
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
