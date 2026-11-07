@@ -154,6 +154,23 @@ pub fn run(invoked_name: &str, rest_args: &[String]) -> ExitCode {
         }
     };
 
+    // Output that isn't valid UTF-8 (a Latin-1 file in a diff, a binary
+    // blob) can't be filtered without inventing U+FFFD the tool never wrote
+    // (rule 5): hand both captured streams over byte for byte.
+    if std::str::from_utf8(&captured.stdout).is_err()
+        || captured
+            .stderr
+            .as_deref()
+            .is_some_and(|e| std::str::from_utf8(e).is_err())
+    {
+        use std::io::Write;
+        if let Some(err) = &captured.stderr {
+            let _ = std::io::stderr().write_all(err);
+        }
+        let _ = std::io::stdout().write_all(&captured.stdout);
+        stats::record_passthrough(&stats::command_key(invoked_name, rest_args));
+        return ExitCode::from(captured.exit_code as u8);
+    }
     let raw = String::from_utf8_lossy(&captured.stdout);
 
     // Business rule 2 (specs.md §4): no success shortcut if the process did

@@ -145,6 +145,18 @@ fn without_agent_output_is_untouched() {
 }
 
 #[test]
+fn non_utf8_output_passes_byte_for_byte() {
+    let sb = git_sandbox();
+    // A Latin-1 "é" (0xE9) in a commit body: filtering would turn it into U+FFFD.
+    let mut log = GIT_LOG.as_bytes().to_vec();
+    log.extend_from_slice(b"\n    caf\xe9\n");
+    fs::write(sb.root.join("git.stdout"), &log).unwrap();
+    let out = sb.run("git", &["log"], true, &[]);
+    assert_eq!(out.stdout, log);
+    assert!(out.status.success());
+}
+
+#[test]
 fn agent_gets_filtered_output() {
     let sb = git_sandbox();
     let out = sb.run("git", &["log"], true, &[]);
