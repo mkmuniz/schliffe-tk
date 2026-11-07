@@ -17,7 +17,12 @@ Every item here comes from a gap already recorded in `KNOWN_ISSUES.md` (which ex
 - [x] M13 stats-guided audit (2026-10-02): fixed `git status` filter to accept flags (was bare-only, 164 passthrough). Top unfiltered commands all produce < 2.2 KB — no new filters needed.
 
 - [x] First batch of long-tail filters (2026-09-24): npm/pnpm/yarn/pip install, docker pull/build, dotnet, cargo stderr, go — plus stderr support in Layer B (`stream = "stderr"|"both"`).
-- [ ] Write TOML filters for the remaining long-tail commands (RTK audit, specs §10): `go-build`, `tsc`, `rg`, `make`, `jq`, `poetry`, `uv`, `mise`, `jj`, `nx`, `turbo`, `pre-commit`, `grep`, `fd`, `tree`, `wc`, `df`, `stat`, `shellcheck`, `yamllint`, `oxlint`, `ruff-format`, `cargo-clippy`, `ls-la`, `golangci-lint`, among others.
+- [x] ~~Write TOML filters for the remaining long-tail commands~~ (RTK audit list: `tsc`, `rg`, `make`, `jq`, `poetry`, `uv`…) — **measured, not worth it (2026-11-07).** 30 days of real transcripts, 5,330 Bash outputs (6.3M chars) as the model saw them: 65.7% is the agent reading/searching files through the shell (`grep`, `cat`, `sed -n`, `ls` — content it needs verbatim; and the shim also filters inside pipes, so touching `grep` would break `grep … | cut -d:`), 12.6% already cut by the agent (`| head`/`| tail`), 11.4% ad-hoc scripts/heredocs, 5.3% already filtered. The remaining 4.9% (`python3`, `jq`, `node` script output, `gh pr`…) has no repetitive noise to drop without losing context; most of the RTK list doesn't appear at all. Ceiling ≈ 40k tokens/month (~0.01% of the cost). Re-measure before reopening.
+- [ ] `compact_path` replaces the cwd/HOME without a path boundary (`/repo/app-web` → `.-web`, `/Users/mike` → `~ike`): fabricates paths (rule 5).
+- [ ] stdout/stderr go through `from_utf8_lossy` before filtering: a Latin-1 diff gets `U+FFFD` it never had (rule 5) — non-UTF-8 output should pass through raw.
+- [ ] `strip_ansi` misses part of CSI/OSC sequences.
+- [ ] `git status` with any flag is replaced by `--porcelain=v1 --branch` (M13): `-v`, `--ignored`, `-z`, `--porcelain=v2`, `-uno` lose what they asked for — allowlist the flags whose output the porcelain covers.
+- [ ] `max_lines` keeps only the head, so the final verdict (eslint `✖ N problems`, `FAIL`, `Plan:`) is cut — add head+tail.
 - [x] ~~Make Layer B's pipeline order configurable~~ — it already is: steps run in the order the TOML lists them (the "fixed order" note was wrong).
 - [x] Catalog actions `compact_path`, `collapse_lines_matching` (aggregate-lite, with recovery hint) and `squeeze_spaces`; `match_any` for rules reached through several invocations (2026-09-24).
 - [ ] Remaining catalog actions: `group_by`, `json_extract`/`json_schema`/`ndjson_stream`, `regex_extract`, `state_machine`, `format_template`.
@@ -26,7 +31,7 @@ Every item here comes from a gap already recorded in `KNOWN_ISSUES.md` (which ex
 ## Cache, progressive disclosure, and dedup (`core/store`)
 
 - [ ] Extend the cache to working-tree-dependent commands (`git status`/`git diff` with no fixed commit — needs to check `.git/index` mtime).
-- [ ] Evaluate a file-read cache (key: path + mtime + size, or a content hash).
+- [x] ~~Evaluate a file-read cache~~ — dropped (2026-11-07): Claude Code already dedups identical Reads (same path, range and mtime → `file_unchanged`), and Read is ~1.5–2% of the tokens added.
 - [x] Scope dedup to a real session id — uses `CLAUDE_CODE_SESSION_ID` (or `SCHLIFFE_SESSION_ID`), time window kept as the upper bound (2026-09-24).
 - [ ] Validate the cleanup policy (14 days, ~2% sweep per write) at real usage volume, not just the volume generated during development.
 
