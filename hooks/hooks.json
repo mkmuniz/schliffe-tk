@@ -1,5 +1,5 @@
 {
-  "description": "Schliffe hooks — trim remote MCP results (Figma, etc.) and large images on PostToolUse, and flag pasted logs / long-conversation context on UserPromptSubmit. These call the `schliffe` binary, which must be on PATH (brew/cargo/npm/curl install, then /schliffe-setup).",
+  "description": "Schliffe hooks — trim remote MCP results (Figma, etc.) and large images on PostToolUse, and flag pasted logs / long-conversation context on UserPromptSubmit. These call the `schliffe` binary from PATH (brew/cargo/npm/curl install, then /schliffe-setup); until it is installed they do nothing, instead of failing on every tool call.",
   "hooks": {
     "PostToolUse": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "schliffe hook post-tool-use",
+            "command": "command -v schliffe >/dev/null 2>&1 || exit 0; exec schliffe hook post-tool-use",
             "timeout": 30
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "schliffe hook user-prompt-submit",
+            "command": "command -v schliffe >/dev/null 2>&1 || exit 0; exec schliffe hook user-prompt-submit",
             "timeout": 10
           }
         ]

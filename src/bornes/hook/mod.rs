@@ -220,7 +220,20 @@ pub fn install() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    remove_ours(&mut settings);
+    let removed = remove_ours(&mut settings);
+    // The plugin already runs these hooks; registering them here too would
+    // run each one twice (doubled notices).
+    if plugin_enabled(&settings) {
+        if removed && let Err(e) = write_settings(&path, &settings) {
+            eprintln!("schliffe: failed to write {}: {e}", path.display());
+            return ExitCode::FAILURE;
+        }
+        println!(
+            "schliffe: the Schliffe plugin is enabled and already runs these hooks — not registering them again in {}",
+            path.display()
+        );
+        return ExitCode::SUCCESS;
+    }
     let Some(root) = settings.as_object_mut() else {
         eprintln!("schliffe: {} isn't a JSON object", path.display());
         return ExitCode::FAILURE;
@@ -364,9 +377,35 @@ fn remove_ours(settings: &mut Value) -> bool {
     removed
 }
 
+/// Whether the Schliffe Claude Code plugin (`schliffe@<marketplace>`) is
+/// enabled in these settings.
+fn plugin_enabled(settings: &Value) -> bool {
+    settings
+        .get("enabledPlugins")
+        .and_then(Value::as_object)
+        .is_some_and(|p| {
+            p.iter()
+                .any(|(k, v)| k.starts_with("schliffe@") && v.as_bool() == Some(true))
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plugin_enabled_only_counts_an_enabled_schliffe_plugin() {
+        assert!(plugin_enabled(
+            &json!({"enabledPlugins": {"schliffe@schliffe-tk": true}})
+        ));
+        assert!(!plugin_enabled(
+            &json!({"enabledPlugins": {"schliffe@schliffe-tk": false}})
+        ));
+        assert!(!plugin_enabled(
+            &json!({"enabledPlugins": {"schliffe-extra@x": true, "other@y": true}})
+        ));
+        assert!(!plugin_enabled(&json!({})));
+    }
 
     fn stats_off() {
         // Tests must not write to the real stats log.

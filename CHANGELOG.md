@@ -9,6 +9,11 @@ All notable changes to this project are recorded here. Format loosely inspired b
 - **`schliffe report`: cache rebuilds**. Replies that write the cached conversation again instead of re-reading it are split out of "new content" and attributed to idling past the TTL, compaction, a model switch, or other — with their cost and, when idle rebuilds pass 5% of it, a lever.
 
 ### Fixed
+- **Install paths** (found by testing each one in an isolated HOME):
+  - **Homebrew: shims died on `brew upgrade`.** `schliffe setup` pointed them at the versioned `Cellar/schliffe/<v>/bin/schliffe`, which the upgrade deletes; the agent's git/cargo/npm then silently stopped being filtered. Shims now go through the stable link on PATH (`/opt/homebrew/bin/schliffe`). Existing Homebrew installs: run `schliffe setup` once after upgrading.
+  - **Plugin installed before the binary** made every Read, MCP call and prompt fail with `schliffe: command not found`. The hooks now do nothing until `schliffe` is on PATH.
+  - **Plugin + `schliffe setup` registered the hooks twice** (every prompt notice doubled). Hook registration is skipped when the plugin is enabled, and an earlier copy is removed.
+  - **npm with scripts disabled** (`--ignore-scripts`, pnpm 10's default) left no binary and told the user to reinstall. The launcher now downloads and verifies it on first run.
 - **Filters no longer invent text (rule 5).** `compact_path` replaced the cwd/HOME as plain substrings (`/repo/app-web` became `.-web`, a path that doesn't exist); output that isn't valid UTF-8 got `U+FFFD` the tool never printed and now passes through byte for byte; `strip_ansi` now removes full CSI/OSC sequences (cursor codes, terminal hyperlinks).
 - **`git status` with a content flag ran as porcelain.** `-v`, `--ignored`, `-uno`/`-uall`, `-z` and `--porcelain=v2` lost what they asked for; only format flags (`-s`, `-b`, `--short`, `--branch`, `--porcelain`) are filtered now.
 - **Long builds and lint runs lost their verdict.** `max_lines` kept only the head; a new `tail` keeps the end too, on for eslint/JS builds, `go test`, `terraform plan`, `dotnet build`, `docker build` and installs.
